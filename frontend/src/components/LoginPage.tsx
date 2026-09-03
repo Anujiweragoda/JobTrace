@@ -41,16 +41,21 @@ export default function LoginPage({ onLogin, onGoogleLogin, onSignup, loading = 
   
 
   useEffect(() => {
-    if (!GOOGLE_CLIENT_ID || !window.google?.accounts?.id) return;
+    if (!GOOGLE_CLIENT_ID) return;
 
-    const script = document.getElementById("google-gsi-script");
-    if (script) {
-      window.google.accounts.id.initialize({
+    const script = document.getElementById("google-gsi-script") as HTMLScriptElement | null;
+    const initialize = () => {
+      window.google?.accounts?.id?.initialize({
         client_id: GOOGLE_CLIENT_ID,
         callback: async (response) => {
           await onGoogleLogin(response.credential);
         },
       });
+    };
+
+    if (script) {
+      // If script already present, try to initialize (may already be ready)
+      initialize();
       return;
     }
 
@@ -60,15 +65,10 @@ export default function LoginPage({ onLogin, onGoogleLogin, onSignup, loading = 
     googleScript.async = true;
     googleScript.defer = true;
     googleScript.onload = () => {
-      window.google?.accounts?.id?.initialize({
-        client_id: GOOGLE_CLIENT_ID,
-        callback: async (response) => {
-          await onGoogleLogin(response.credential);
-        },
-      });
+      initialize();
     };
     document.body.appendChild(googleScript);
-  }, [onGoogleLogin]);
+  }, [onGoogleLogin, GOOGLE_CLIENT_ID]);
 
   return (
     <div className="auth-screen">
