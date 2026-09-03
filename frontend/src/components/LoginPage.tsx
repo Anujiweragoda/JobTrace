@@ -51,6 +51,15 @@ export default function LoginPage({ onLogin, onGoogleLogin, onSignup, loading = 
           await onGoogleLogin(response.credential);
         },
       });
+      // render the Google-branded button into the container if present
+      const btnContainer = document.getElementById("google-signin-button");
+      if (btnContainer && window.google?.accounts?.id?.renderButton) {
+        try {
+          window.google.accounts.id.renderButton(btnContainer, { theme: "outline", size: "large" });
+        } catch (e) {
+          // ignore render errors
+        }
+      }
     };
 
     if (script) {
@@ -128,6 +137,9 @@ export default function LoginPage({ onLogin, onGoogleLogin, onSignup, loading = 
                 Continue with Google
               </button>
             )}
+              {GOOGLE_CLIENT_ID && (
+                <div id="google-signin-button" style={{ display: "inline-block", marginLeft: 8 }} />
+              )}
           </div>
 
           <div style={{ marginTop: 12, textAlign: "center" }}>
