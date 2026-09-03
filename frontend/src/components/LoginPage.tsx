@@ -24,8 +24,8 @@ export type LoginPageProps = {
 const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID || "";
 
 export default function LoginPage({ onLogin, onGoogleLogin, onSignup, loading = false, error = "" }: LoginPageProps) {
-  const [username, setUsername] = useState("admin");
-  const [password, setPassword] = useState("admin123");
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
   const [email, setEmail] = useState("");
   const [signupMode, setSignupMode] = useState(false);
   const [gsiLoaded, setGsiLoaded] = useState(false);
@@ -52,15 +52,6 @@ export default function LoginPage({ onLogin, onGoogleLogin, onSignup, loading = 
           await onGoogleLogin(response.credential);
         },
       });
-      // render the Google-branded button into the container if present
-      const btnContainer = document.getElementById("google-signin-button");
-      if (btnContainer && window.google?.accounts?.id?.renderButton) {
-        try {
-          window.google.accounts.id.renderButton(btnContainer, { theme: "outline", size: "large" });
-        } catch (e) {
-          // ignore render errors
-        }
-      }
     };
 
     if (script) {
@@ -156,16 +147,6 @@ export default function LoginPage({ onLogin, onGoogleLogin, onSignup, loading = 
 
           
         </form>
-
-        {import.meta.env.DEV && (
-          <div style={{ marginTop: 12, fontSize: 12, color: "#666" }}>
-            <div>Google Client ID: {GOOGLE_CLIENT_ID ? "present" : "missing"}</div>
-            <div>window.google.accounts.id: {gsiLoaded ? "loaded" : "not loaded"}</div>
-          </div>
-        )}
-
-
-        <p className="auth-note">Demo account: admin / admin123</p>
       </div>
     </div>
   );
