@@ -12,6 +12,8 @@
     "resolveJsonModule": true,
     "declaration": false,
     "sourceMap": false
+    ,
+    "ignoreDeprecations": "6.0"
   },
   "include": ["src"]
 }

@@ -12,8 +12,8 @@ export default defineConfig({
         configure: (proxy) => {
           // Ensure Authorization header from the browser is forwarded to the backend
           // in case some proxy setups drop it.
-          try {
-            proxy.on("proxyReq", (proxyReq: any, req: any, res: any) => {
+            try {
+            proxy.on("proxyReq", (proxyReq: any, req: any, _res: any) => {
               const auth = req.headers["authorization"] || req.headers["Authorization"];
               if (auth) {
                 proxyReq.setHeader("authorization", auth as string);

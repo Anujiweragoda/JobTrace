@@ -1,6 +1,8 @@
+import type { ReactNode } from "react";
+
 export type Tab = "dashboard" | "applications" | "followups" | "analytics" | "cv" | "profile";
 
-const LINKS: { id: Tab; label: string; icon: JSX.Element }[] = [
+const LINKS: { id: Tab; label: string; icon: ReactNode }[] = [
   {
     id: "dashboard",
     label: "Dashboard",

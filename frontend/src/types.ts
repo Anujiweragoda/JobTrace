@@ -55,6 +55,7 @@ export interface Application {
   created_at: string;
   updated_at: string;
   health: Health;
+  warning?: string | null;
 }
 
 export interface TimelineEvent {
