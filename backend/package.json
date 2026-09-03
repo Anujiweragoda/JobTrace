@@ -13,6 +13,7 @@
     "prisma:studio": "prisma studio",
     "test-db": "ts-node src/testDb.ts"
   },
+  "vercel-build": "npm run prisma:generate && npm run build",
   "dependencies": {
     "@prisma/client": "^5.13.0",
     "cors": "^2.8.5",
@@ -20,7 +21,8 @@
     "express": "^4.19.2",
     "google-auth-library": "^10.0.0",
     "pg": "^8.11.0",
-    "puppeteer": "^25.9.0"
+    "puppeteer": "^25.9.0",
+    "serverless-http": "^3.0.0"
   },
   "devDependencies": {
     "@types/cors": "^2.8.17",

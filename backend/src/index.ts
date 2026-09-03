@@ -23,6 +23,10 @@ app.use("/api/analytics", requireAuth, analyticsRouter);
 
 app.get("/api/health", (req, res) => res.json({ ok: true }));
 
-app.listen(PORT, () => {
-  console.log(`Job Tracker API listening on http://localhost:${PORT}`);
-});
+if (require.main === module) {
+  app.listen(PORT, () => {
+    console.log(`Job Tracker API listening on http://localhost:${PORT}`);
+  });
+}
+
+export default app;
