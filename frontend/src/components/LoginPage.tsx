@@ -7,6 +7,14 @@ declare global {
         id?: {
           initialize: (config: { client_id: string; callback: (response: { credential: string }) => void }) => void;
           prompt: () => void;
+          renderButton: (element: HTMLElement, options?: {
+            theme?: "outline";
+            size?: "large" | "medium" | "small";
+            text?: string;
+            shape?: "rectangular" | "pill";
+            width?: string;
+            locale?: string;
+          }) => void;
         };
       };
     };
@@ -28,7 +36,6 @@ export default function LoginPage({ onLogin, onGoogleLogin, onSignup, loading = 
   const [password, setPassword] = useState("");
   const [email, setEmail] = useState("");
   const [signupMode, setSignupMode] = useState(false);
-  const [gsiLoaded, setGsiLoaded] = useState(false);
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -44,7 +51,9 @@ export default function LoginPage({ onLogin, onGoogleLogin, onSignup, loading = 
   useEffect(() => {
     if (!GOOGLE_CLIENT_ID) return;
 
-    const script = document.getElementById("google-gsi-script") as HTMLScriptElement | null;
+    const scriptUrl = "https://accounts.google.com/gsi/client?hl=en";
+    let script = document.getElementById("google-gsi-script") as HTMLScriptElement | null;
+
     const initialize = () => {
       window.google?.accounts?.id?.initialize({
         client_id: GOOGLE_CLIENT_ID,
@@ -52,34 +61,38 @@ export default function LoginPage({ onLogin, onGoogleLogin, onSignup, loading = 
           await onGoogleLogin(response.credential);
         },
       });
+
+      const btnContainer = document.getElementById("google-signin-button");
+      if (btnContainer) {
+        window.google?.accounts?.id?.renderButton(btnContainer, {
+          theme: "outline",
+          size: "large",
+          width: "100%",
+          text: "signin_with",
+          locale: "en",
+          shape: "rectangular",
+        });
+      }
     };
 
+    if (script && script.src !== scriptUrl) {
+      script.remove();
+      script = null;
+    }
+
     if (script) {
-      // If script already present, try to initialize (may already be ready)
       initialize();
-      setGsiLoaded(!!window.google?.accounts?.id);
       return;
     }
 
     const googleScript = document.createElement("script");
     googleScript.id = "google-gsi-script";
-    googleScript.src = "https://accounts.google.com/gsi/client";
+    googleScript.src = scriptUrl;
     googleScript.async = true;
     googleScript.defer = true;
-    googleScript.onload = () => {
-      initialize();
-      setGsiLoaded(!!window.google?.accounts?.id);
-    };
+    googleScript.onload = initialize;
     document.body.appendChild(googleScript);
   }, [onGoogleLogin, GOOGLE_CLIENT_ID]);
-
-  useEffect(() => {
-    if (!import.meta.env.DEV) return;
-    const t = setInterval(() => {
-      setGsiLoaded(!!window.google?.accounts?.id);
-    }, 500);
-    return () => clearInterval(t);
-  }, []);
 
   return (
     <div className="auth-screen">
