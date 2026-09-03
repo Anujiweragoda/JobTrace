@@ -140,17 +140,8 @@ export default function LoginPage({ onLogin, onGoogleLogin, onSignup, loading = 
             </button>
 
             {GOOGLE_CLIENT_ID && (
-              <button
-                type="button"
-                className="btn btn-secondary google-button"
-                onClick={() => window.google?.accounts?.id?.prompt?.()}
-              >
-                Continue with Google
-              </button>
+              <div id="google-signin-button" style={{ width: "100%", marginTop: 12 }} />
             )}
-              {GOOGLE_CLIENT_ID && (
-                <div id="google-signin-button" style={{ display: "inline-block", marginLeft: 8 }} />
-              )}
           </div>
 
           <div style={{ marginTop: 12, textAlign: "center" }}>
