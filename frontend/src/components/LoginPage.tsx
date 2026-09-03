@@ -28,6 +28,7 @@ export default function LoginPage({ onLogin, onGoogleLogin, onSignup, loading = 
   const [password, setPassword] = useState("admin123");
   const [email, setEmail] = useState("");
   const [signupMode, setSignupMode] = useState(false);
+  const [gsiLoaded, setGsiLoaded] = useState(false);
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -65,6 +66,7 @@ export default function LoginPage({ onLogin, onGoogleLogin, onSignup, loading = 
     if (script) {
       // If script already present, try to initialize (may already be ready)
       initialize();
+      setGsiLoaded(!!window.google?.accounts?.id);
       return;
     }
 
@@ -75,9 +77,18 @@ export default function LoginPage({ onLogin, onGoogleLogin, onSignup, loading = 
     googleScript.defer = true;
     googleScript.onload = () => {
       initialize();
+      setGsiLoaded(!!window.google?.accounts?.id);
     };
     document.body.appendChild(googleScript);
   }, [onGoogleLogin, GOOGLE_CLIENT_ID]);
+
+  useEffect(() => {
+    if (!import.meta.env.DEV) return;
+    const t = setInterval(() => {
+      setGsiLoaded(!!window.google?.accounts?.id);
+    }, 500);
+    return () => clearInterval(t);
+  }, []);
 
   return (
     <div className="auth-screen">
@@ -154,6 +165,13 @@ export default function LoginPage({ onLogin, onGoogleLogin, onSignup, loading = 
 
           
         </form>
+
+        {import.meta.env.DEV && (
+          <div style={{ marginTop: 12, fontSize: 12, color: "#666" }}>
+            <div>Google Client ID: {GOOGLE_CLIENT_ID ? "present" : "missing"}</div>
+            <div>window.google.accounts.id: {gsiLoaded ? "loaded" : "not loaded"}</div>
+          </div>
+        )}
 
 
         <p className="auth-note">Demo account: admin / admin123</p>
