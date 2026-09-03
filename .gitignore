@@ -3,3 +3,6 @@ dist/
 backend/data/
 *.log
 .DS_Store
+# local environment files
+backend/.env
+frontend/.env.local
