@@ -14,6 +14,7 @@ model User {
   passwordHash String?  @map("password_hash")
   googleId     String?  @unique @map("google_id")
   createdAt    DateTime @default(now()) @map("created_at")
+  applications Application[]
 }
 
 model CvVersion {
@@ -49,6 +50,10 @@ model Application {
   cvVersion           CvVersion?      @relation(fields: [cvVersionId], references: [id])
   reminders           Reminder[]
   timeline            TimelineEvent[]
+  userId              Int?            @map("user_id")
+  user                User?           @relation(fields: [userId], references: [id])
+
+  @@index([userId])
 
   @@index([status])
 }

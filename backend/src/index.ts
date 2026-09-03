@@ -5,6 +5,7 @@ import remindersRouter from "./routes/reminders";
 import cvVersionsRouter from "./routes/cvVersions";
 import analyticsRouter from "./routes/analytics";
 import authRouter from "./routes/auth";
+import profileRouter from "./routes/profile";
 import { requireAuth } from "./auth";
 
 const app = express();
@@ -14,6 +15,7 @@ app.use(cors());
 app.use(express.json({ limit: "2mb" }));
 
 app.use("/api/auth", authRouter);
+app.use("/api/profile", requireAuth, profileRouter);
 app.use("/api/applications", requireAuth, applicationsRouter);
 app.use("/api/reminders", requireAuth, remindersRouter);
 app.use("/api/cv-versions", requireAuth, cvVersionsRouter);

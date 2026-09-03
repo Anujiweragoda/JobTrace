@@ -7,6 +7,7 @@ import ApplicationsList from "./components/ApplicationsList";
 import FollowUps from "./components/FollowUps";
 import Analytics from "./components/Analytics";
 import CvVersions from "./components/CvVersions";
+import Profile from "./components/Profile";
 import ApplicationModal from "./components/ApplicationModal";
 import ApplicationDetailModal from "./components/ApplicationDetailModal";
 import LoginPage from "./components/LoginPage";
@@ -238,6 +239,7 @@ export default function App() {
             {tab === "cv" && (
               <CvVersions cvVersions={cvVersions} onChanged={refreshCvVersions} />
             )}
+            {tab === "profile" && <Profile />}
           </>
         )}
       </main>

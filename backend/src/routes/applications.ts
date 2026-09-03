@@ -38,7 +38,10 @@ function touchUpdatedAt(id: number) {
 router.get("/", async (req, res) => {
   const { search, status, source } = req.query as Record<string, string>;
 
-  const where: any = {};
+  const userId = (req as any).user?.id;
+  if (!userId) return res.status(401).json({ error: "Authentication required" });
+
+  const where: any = { userId };
   if (status) where.status = status;
   if (source) where.source = source;
   if (search) {
@@ -187,9 +190,12 @@ router.post("/preview", async (req, res) => {
 // GET /api/applications/:id
 // GET /api/applications/:id
 router.get("/:id", async (req, res) => {
+  const userId = (req as any).user?.id;
+  if (!userId) return res.status(401).json({ error: "Authentication required" });
+
   const id = Number(req.params.id);
   const app = await prisma.application.findUnique({ where: { id } });
-  if (!app) return res.status(404).json({ error: "Application not found" });
+  if (!app || app.userId !== userId) return res.status(404).json({ error: "Application not found" });
 
   const row = {
     id: app.id,
@@ -256,6 +262,7 @@ router.post("/", async (req, res) => {
         notes: b.notes ?? null,
         appliedDate: b.applied_date ? new Date(b.applied_date) : status !== "saved" ? new Date() : null,
         interviewDate: b.interview_date ? new Date(b.interview_date) : null,
+        userId: (req as any).user?.id ?? null,
       },
     });
 
@@ -303,9 +310,12 @@ router.post("/", async (req, res) => {
 
 // PUT /api/applications/:id  (full edit)
 router.put("/:id", async (req, res) => {
+  const userId = (req as any).user?.id;
+  if (!userId) return res.status(401).json({ error: "Authentication required" });
+
   const id = Number(req.params.id);
   const existing = await prisma.application.findUnique({ where: { id } });
-  if (!existing) return res.status(404).json({ error: "Application not found" });
+  if (!existing || existing.userId !== userId) return res.status(404).json({ error: "Application not found" });
 
   const b = req.body ?? {};
 
@@ -367,6 +377,9 @@ router.put("/:id", async (req, res) => {
 
 // PATCH /api/applications/:id/status  (drag-and-drop kanban move)
 router.patch("/:id/status", async (req, res) => {
+  const userId = (req as any).user?.id;
+  if (!userId) return res.status(401).json({ error: "Authentication required" });
+
   const id = Number(req.params.id);
   const { status } = req.body ?? {};
 
@@ -375,7 +388,7 @@ router.patch("/:id/status", async (req, res) => {
   }
 
   const existing = await prisma.application.findUnique({ where: { id } });
-  if (!existing) return res.status(404).json({ error: "Application not found" });
+  if (!existing || existing.userId !== userId) return res.status(404).json({ error: "Application not found" });
 
   const data: any = { status, updatedAt: new Date() };
   if (status === "applied" && !existing.appliedDate) {
@@ -394,6 +407,7 @@ router.patch("/:id/status", async (req, res) => {
   }
 
   const patched = await prisma.application.findUnique({ where: { id } });
+  if (!patched || patched.userId !== userId) return res.status(500).json({ error: "Application not found after status update" });
   if (!patched) return res.status(500).json({ error: "Application not found after status update" });
 
   res.json(
@@ -424,9 +438,12 @@ router.patch("/:id/status", async (req, res) => {
 
 // POST /api/applications/:id/timeline  (manual event, e.g. recruiter contacted)
 router.post("/:id/timeline", async (req, res) => {
+  const userId = (req as any).user?.id;
+  if (!userId) return res.status(401).json({ error: "Authentication required" });
+
   const id = Number(req.params.id);
-  const existing = await prisma.application.findUnique({ where: { id }, select: { id: true } });
-  if (!existing) return res.status(404).json({ error: "Application not found" });
+  const existing = await prisma.application.findUnique({ where: { id }, select: { id: true, userId: true } });
+  if (!existing || existing.userId !== userId) return res.status(404).json({ error: "Application not found" });
 
   const { event_type, description, event_date } = req.body ?? {};
   if (!event_type) return res.status(400).json({ error: "event_type is required" });
@@ -439,7 +456,13 @@ router.post("/:id/timeline", async (req, res) => {
 
 // DELETE /api/applications/:id
 router.delete("/:id", async (req, res) => {
+  const userId = (req as any).user?.id;
+  if (!userId) return res.status(401).json({ error: "Authentication required" });
+
   const id = Number(req.params.id);
+  const existing = await prisma.application.findUnique({ where: { id }, select: { id: true, userId: true } });
+  if (!existing || existing.userId !== userId) return res.status(404).json({ error: "Application not found" });
+
   try {
     await prisma.application.delete({ where: { id } });
     res.status(204).send();

@@ -13,7 +13,7 @@ try {
 declare global {
   namespace Express {
     interface Request {
-      user?: { username: string };
+      user?: { username: string; id?: number };
     }
   }
 }
@@ -159,7 +159,7 @@ export async function verifyGoogleCredential(credential: string) {
   };
 }
 
-export function requireAuth(req: Request, res: Response, next: NextFunction) {
+export async function requireAuth(req: Request, res: Response, next: NextFunction) {
   const authHeader = req.headers.authorization || "";
   try {
     // eslint-disable-next-line no-console
@@ -187,10 +187,37 @@ export function requireAuth(req: Request, res: Response, next: NextFunction) {
     return res.status(401).json({ error: "Invalid or expired token." });
   }
 
-  req.user = { username };
-  return next();
+  try {
+    const user = await prisma.user.findUnique({ where: { username } });
+    if (!user) return res.status(401).json({ error: "Invalid user." });
+    req.user = { username, id: user.id };
+    return next();
+  } catch (e) {
+    return res.status(500).json({ error: "Failed to verify user." });
+  }
 }
 
 export function getDefaultUser(): AuthUser {
   return { username: DEFAULT_USER };
+}
+
+export async function updateUser(userId: number, newUsername?: string, newPassword?: string) {
+  const data: any = {};
+  if (typeof newUsername === "string" && newUsername.trim()) {
+    const safe = newUsername.trim();
+    // ensure uniqueness
+    const existing = await prisma.user.findFirst({ where: { username: safe } });
+    if (existing && existing.id !== userId) throw new Error("Username already taken");
+    data.username = safe;
+  }
+
+  if (typeof newPassword === "string" && newPassword.length > 0) {
+    if (newPassword.length < 6) throw new Error("Password must be at least 6 characters");
+    data.passwordHash = hashPassword(newPassword);
+  }
+
+  if (Object.keys(data).length === 0) throw new Error("No changes provided");
+
+  const updated = await prisma.user.update({ where: { id: userId }, data });
+  return { username: updated.username, email: updated.email ?? null };
 }

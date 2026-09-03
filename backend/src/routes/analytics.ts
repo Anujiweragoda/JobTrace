@@ -7,12 +7,15 @@ const router = Router();
 
 // GET /api/analytics/dashboard  -> stats cards + kanban column counts
 router.get("/dashboard", async (req, res) => {
+  const userId = (req as any).user?.id;
+  if (!userId) return res.status(401).json({ error: "Authentication required" });
+
   const counts: Record<string, number> = {};
   for (const s of STATUSES) {
-    counts[s] = await prisma.application.count({ where: { status: s } });
+    counts[s] = await prisma.application.count({ where: { status: s, userId } });
   }
 
-  const total = await prisma.application.count();
+  const total = await prisma.application.count({ where: { userId } });
 
   res.json({
     total,
@@ -26,24 +29,27 @@ router.get("/dashboard", async (req, res) => {
 
 // GET /api/analytics  -> full analytics page data
 router.get("/", async (req, res) => {
-  const totalApplicationsCount = await prisma.application.count({ where: { NOT: { status: "saved" } } });
+  const userId = (req as any).user?.id;
+  if (!userId) return res.status(401).json({ error: "Authentication required" });
 
-  const interviewCountDistinct = await prisma.timelineEvent.findMany({ where: { eventType: "interview" }, distinct: ["applicationId"], select: { applicationId: true } });
+  const totalApplicationsCount = await prisma.application.count({ where: { NOT: { status: "saved" }, userId } });
 
-  const offersCount = await prisma.application.count({ where: { status: "offer" } });
+  const interviewCountDistinct = await prisma.timelineEvent.findMany({ where: { eventType: "interview", application: { userId } }, distinct: ["applicationId"], select: { applicationId: true } });
+
+  const offersCount = await prisma.application.count({ where: { status: "offer", userId } });
 
   const responseRate = totalApplicationsCount > 0 ? Math.round((interviewCountDistinct.length / totalApplicationsCount) * 100) : 0;
 
   const bySource = await prisma.$queryRaw`
-    SELECT COALESCE(source, 'Unspecified') as source, COUNT(*) as count FROM applications GROUP BY source ORDER BY count DESC
+    SELECT COALESCE(source, 'Unspecified') as source, COUNT(*) as count FROM applications WHERE user_id = ${userId} GROUP BY source ORDER BY count DESC
   `;
 
   const byEmploymentType = await prisma.$queryRaw`
-    SELECT COALESCE(employment_type, 'Unspecified') as employment_type, COUNT(*) as count FROM applications GROUP BY employment_type ORDER BY count DESC
+    SELECT COALESCE(employment_type, 'Unspecified') as employment_type, COUNT(*) as count FROM applications WHERE user_id = ${userId} GROUP BY employment_type ORDER BY count DESC
   `;
 
   const byStatus = await prisma.$queryRaw`
-    SELECT status, COUNT(*) as count FROM applications GROUP BY status
+    SELECT status, COUNT(*) as count FROM applications WHERE user_id = ${userId} GROUP BY status
   `;
 
   res.json({
@@ -59,7 +65,10 @@ router.get("/", async (req, res) => {
 
 // GET /api/analytics/health-summary -> counts per health bucket, for follow-ups page
 router.get("/health-summary", async (req, res) => {
-  const rows = (await prisma.$queryRaw`SELECT * FROM applications WHERE status NOT IN ('rejected','offer')`) as unknown as ApplicationRow[];
+  const userId = (req as any).user?.id;
+  if (!userId) return res.status(401).json({ error: "Authentication required" });
+
+  const rows = (await prisma.$queryRaw`SELECT * FROM applications WHERE status NOT IN ('rejected','offer') AND user_id = ${userId}`) as unknown as ApplicationRow[];
 
   const summary: Record<string, number> = {
     active: 0,

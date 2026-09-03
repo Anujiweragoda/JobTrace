@@ -7,8 +7,11 @@ const router = Router();
 router.get("/", async (req, res) => {
   const includeCompleted = req.query.includeCompleted === "true";
 
+  const userId = (req as any).user?.id;
+  if (!userId) return res.status(401).json({ error: "Authentication required" });
+
   const rows = await prisma.reminder.findMany({
-    where: includeCompleted ? {} : { completed: false },
+    where: includeCompleted ? { application: { userId } } : { completed: false, application: { userId } },
     include: { application: { select: { company: true, position: true } } },
     orderBy: { dueDate: "asc" },
   });
@@ -25,6 +28,12 @@ router.post("/", async (req, res) => {
     return res.status(400).json({ error: "application_id, message, due_date are required" });
   }
 
+  const userId = (req as any).user?.id;
+  if (!userId) return res.status(401).json({ error: "Authentication required" });
+
+  const app = await prisma.application.findUnique({ where: { id: application_id }, select: { id: true, userId: true } });
+  if (!app || app.userId !== userId) return res.status(404).json({ error: "Application not found" });
+
   const row = await prisma.reminder.create({ data: { applicationId: application_id, message, dueDate: new Date(due_date) } });
   res.status(201).json(row);
 });
@@ -32,18 +41,26 @@ router.post("/", async (req, res) => {
 // PATCH /api/reminders/:id/complete
 router.patch("/:id/complete", async (req, res) => {
   const id = Number(req.params.id);
-  try {
-    await prisma.reminder.update({ where: { id }, data: { completed: true } });
-    const row = await prisma.reminder.findUnique({ where: { id } });
-    res.json(row);
-  } catch (e) {
-    res.status(404).json({ error: "Reminder not found" });
-  }
+  const userId = (req as any).user?.id;
+  if (!userId) return res.status(401).json({ error: "Authentication required" });
+
+  const existing = await prisma.reminder.findUnique({ where: { id }, select: { id: true, application: { select: { userId: true } } } });
+  if (!existing || existing.application.userId !== userId) return res.status(404).json({ error: "Reminder not found" });
+
+  await prisma.reminder.update({ where: { id }, data: { completed: true } });
+  const row = await prisma.reminder.findUnique({ where: { id } });
+  res.json(row);
 });
 
 // DELETE /api/reminders/:id
 router.delete("/:id", async (req, res) => {
   const id = Number(req.params.id);
+  const userId = (req as any).user?.id;
+  if (!userId) return res.status(401).json({ error: "Authentication required" });
+
+  const existing = await prisma.reminder.findUnique({ where: { id }, select: { id: true, application: { select: { userId: true } } } });
+  if (!existing || existing.application.userId !== userId) return res.status(404).json({ error: "Reminder not found" });
+
   try {
     await prisma.reminder.delete({ where: { id } });
     res.status(204).send();

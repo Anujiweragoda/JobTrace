@@ -107,6 +107,10 @@ export const api = {
     request<CvVersion>(`/cv-versions`, { method: "POST", body: JSON.stringify(data) }),
   deleteCvVersion: (id: number) => request<void>(`/cv-versions/${id}`, { method: "DELETE" }),
 
+  // Profile
+  getProfile: () => request<{ user: { id: number; username: string; email?: string | null } }>(`/profile`),
+  updateProfile: (data: { username?: string; password?: string }) => request<{ user: { username: string; email?: string | null } }>(`/profile`, { method: "PUT", body: JSON.stringify(data) }),
+
   // Analytics
   getDashboardStats: () => request<DashboardStats>(`/analytics/dashboard`),
   getAnalytics: () => request<AnalyticsData>(`/analytics`),

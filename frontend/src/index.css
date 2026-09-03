@@ -212,6 +212,17 @@ p {
   color: #fff;
 }
 
+.sidebar-icon {
+  width: 18px;
+  height: 18px;
+  display: inline-block;
+}
+.sidebar-icon svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
 .sidebar-link.active {
   background: var(--accent);
   color: #fff;
