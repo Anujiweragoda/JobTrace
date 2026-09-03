@@ -9,12 +9,30 @@ import type {
   TimelineEvent,
 } from "./types";
 
-const BASE = "/api";
+// Use direct backend URL in dev to avoid dev-proxy header issues;
+// in production the frontend is served together so use the relative `/api` path.
+const BASE = import.meta.env.DEV ? "http://localhost:4001/api" : "/api";
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
+  const token = typeof window !== "undefined" ? localStorage.getItem("job-tracker-token") : null;
+  const headers = new Headers({ "Content-Type": "application/json" });
+
+  if (token) {
+    headers.set("Authorization", `Bearer ${token}`);
+  }
+
+  // DEBUG: log token and path to help diagnose auth issues (remove in production)
+  try {
+    // eslint-disable-next-line no-console
+    console.log("API request:", path, "localToken:", token ? `${token.slice(0, 8)}...` : null, "finalHeaders:", Object.fromEntries(headers.entries()));
+  } catch {}
+
   const res = await fetch(`${BASE}${path}`, {
-    headers: { "Content-Type": "application/json" },
     ...options,
+    headers: {
+      ...Object.fromEntries(headers.entries()),
+      ...((options?.headers as Record<string, string>) ?? {}),
+    },
   });
   if (!res.ok) {
     const body = await res.json().catch(() => ({ error: res.statusText }));
@@ -25,6 +43,23 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
 }
 
 export const api = {
+  login: (username: string, password: string) =>
+    request<{ token: string; user: { username: string } }>(`/auth/login`, {
+      method: "POST",
+      body: JSON.stringify({ username, password }),
+    }),
+  googleLogin: (credential: string) =>
+    request<{ token: string; user: { username: string; email?: string; picture?: string | null } }>(`/auth/google`, {
+      method: "POST",
+      body: JSON.stringify({ credential }),
+    }),
+  signup: (username: string, password: string, email?: string) =>
+    request<{ token: string; user: { username: string; email?: string | null } }>(`/auth/signup`, {
+      method: "POST",
+      body: JSON.stringify({ username, password, email }),
+    }),
+  getCurrentUser: () => request<{ user: { username: string } }>(`/auth/me`),
+
   // Applications
   listApplications: (params?: { search?: string; status?: string; source?: string }) => {
     const qs = new URLSearchParams();

@@ -1,5 +1,5 @@
 import { Router } from "express";
-import db from "../db";
+import prisma from "../prismaClient";
 import { ApplicationRow, STATUSES, Status, TimelineEventRow } from "../types";
 import { fromJsonArray, serializeApplication } from "../utils";
 import { extractJobDetailsFromHtml } from "../scrapeJobUrl";
@@ -22,55 +22,61 @@ function derivePositionFromUrl(): string {
   return "Job application";
 }
 
-function getTimeline(applicationId: number): TimelineEventRow[] {
-  return db
-    .prepare(
-      "SELECT * FROM timeline_events WHERE application_id = ? ORDER BY event_date ASC, id ASC"
-    )
-    .all(applicationId) as unknown as TimelineEventRow[];
+async function getTimeline(applicationId: number): Promise<TimelineEventRow[]> {
+  return (await prisma.timelineEvent.findMany({ where: { applicationId }, orderBy: [{ eventDate: "asc" }, { id: "asc" }] })) as unknown as TimelineEventRow[];
 }
 
-function addTimelineEvent(
-  applicationId: number,
-  eventType: string,
-  description?: string
-) {
-  db.prepare(
-    "INSERT INTO timeline_events (application_id, event_type, description) VALUES (?, ?, ?)"
-  ).run(applicationId, eventType, description ?? null);
+function addTimelineEvent(applicationId: number, eventType: string, description?: string) {
+  void prisma.timelineEvent.create({ data: { applicationId, eventType, description: description ?? null } });
 }
 
 function touchUpdatedAt(id: number) {
-  db.prepare(
-    "UPDATE applications SET updated_at = datetime('now') WHERE id = ?"
-  ).run(id);
+  void prisma.application.update({ where: { id }, data: { updatedAt: new Date() } });
 }
 
 // GET /api/applications?search=&status=&source=
-router.get("/", (req, res) => {
+router.get("/", async (req, res) => {
   const { search, status, source } = req.query as Record<string, string>;
 
-  let sql = "SELECT * FROM applications WHERE 1=1";
-  const params: any[] = [];
-
-  if (status) {
-    sql += " AND status = ?";
-    params.push(status);
-  }
-  if (source) {
-    sql += " AND source = ?";
-    params.push(source);
-  }
+  const where: any = {};
+  if (status) where.status = status;
+  if (source) where.source = source;
   if (search) {
-    sql +=
-      " AND (company LIKE ? OR position LIKE ? OR job_description LIKE ? OR notes LIKE ? OR location LIKE ? OR skills LIKE ?)";
-    const like = `%${search}%`;
-    params.push(like, like, like, like, like, like);
+    where.OR = [
+      { company: { contains: search, mode: "insensitive" } },
+      { position: { contains: search, mode: "insensitive" } },
+      { jobDescription: { contains: search, mode: "insensitive" } },
+      { notes: { contains: search, mode: "insensitive" } },
+      { location: { contains: search, mode: "insensitive" } },
+      { skills: { has: search } },
+    ];
   }
 
-  sql += " ORDER BY updated_at DESC";
+  const apps = await prisma.application.findMany({ where, orderBy: { updatedAt: "desc" } });
 
-  const rows = db.prepare(sql).all(...params) as unknown as ApplicationRow[];
+  const rows = apps.map((app) => ({
+    id: app.id,
+    company: app.company,
+    position: app.position,
+    location: app.location ?? null,
+    status: app.status as Status,
+    job_description: app.jobDescription ?? null,
+    requirements: Array.isArray(app.requirements) ? JSON.stringify(app.requirements) : app.requirements ?? null,
+    skills: Array.isArray(app.skills) ? JSON.stringify(app.skills) : app.skills ?? null,
+    salary: app.salary ?? null,
+    employment_type: app.employmentType ?? null,
+    application_deadline: app.applicationDeadline ? new Date(app.applicationDeadline).toISOString() : null,
+    source: app.source ?? null,
+    job_url: app.jobUrl ?? null,
+    cv_version_id: app.cvVersionId ?? null,
+    cover_letter: app.coverLetter ?? null,
+    notes: app.notes ?? null,
+    applied_date: app.appliedDate ? new Date(app.appliedDate).toISOString() : null,
+    interview_date: app.interviewDate ? new Date(app.interviewDate).toISOString() : null,
+    created_at: app.createdAt.toISOString(),
+    updated_at: app.updatedAt.toISOString(),
+  })) as ApplicationRow[];
+
   res.json(rows.map(serializeApplication));
 });
 
@@ -95,7 +101,44 @@ async function fetchJobPageHtml(url: string): Promise<string> {
     }
   }
 
-  throw new Error("The job page is blocking automated fetches, so its details could not be parsed automatically.");
+  // Try a headless browser fetch as a fallback for sites that require JS or block simple fetches.
+  try {
+    // Dynamically import puppeteer so it's optional.
+    // To enable this fallback install puppeteer: `npm install puppeteer` in backend/
+    // If not installed, this will throw and we'll fall back to the standard error.
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const puppeteer = require("puppeteer");
+    const browser = await puppeteer.launch({ args: ["--no-sandbox", "--disable-setuid-sandbox"] });
+    try {
+      const page = await browser.newPage();
+      await page.setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36");
+      await page.setExtraHTTPHeaders({ Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8" });
+      const tryTargets = [url, `http://${url.replace(/^https?:\/\//, "")}`];
+      for (const t of tryTargets) {
+        try {
+          await page.goto(t, { waitUntil: "networkidle2", timeout: 20000 });
+          const content = await page.content();
+          if (content && content.trim()) {
+            await page.close();
+            await browser.close();
+            return content;
+          }
+        } catch (e) {
+          // try next
+          continue;
+        }
+      }
+      await browser.close();
+    } catch (e) {
+      try {
+        await browser.close();
+      } catch {}
+    }
+  } catch (e) {
+    // puppeteer not available or failed — fall through to error below
+  }
+
+  throw new Error("The job page is blocking automated fetches, so its details could not be parsed automatically. To enable a stronger fallback try installing Puppeteer in backend/ (npm install puppeteer) or use the manual entry form.");
 }
 
 // POST /api/applications/preview
@@ -142,26 +185,43 @@ router.post("/preview", async (req, res) => {
 });
 
 // GET /api/applications/:id
-router.get("/:id", (req, res) => {
+// GET /api/applications/:id
+router.get("/:id", async (req, res) => {
   const id = Number(req.params.id);
-  const row = db
-    .prepare("SELECT * FROM applications WHERE id = ?")
-    .get(id) as unknown as ApplicationRow | undefined;
+  const app = await prisma.application.findUnique({ where: { id } });
+  if (!app) return res.status(404).json({ error: "Application not found" });
 
-  if (!row) return res.status(404).json({ error: "Application not found" });
+  const row = {
+    id: app.id,
+    company: app.company,
+    position: app.position,
+    location: app.location ?? null,
+    status: app.status as Status,
+    job_description: app.jobDescription ?? null,
+    requirements: Array.isArray(app.requirements) ? JSON.stringify(app.requirements) : app.requirements ?? null,
+    skills: Array.isArray(app.skills) ? JSON.stringify(app.skills) : app.skills ?? null,
+    salary: app.salary ?? null,
+    employment_type: app.employmentType ?? null,
+    application_deadline: app.applicationDeadline ? new Date(app.applicationDeadline).toISOString() : null,
+    source: app.source ?? null,
+    job_url: app.jobUrl ?? null,
+    cv_version_id: app.cvVersionId ?? null,
+    cover_letter: app.coverLetter ?? null,
+    notes: app.notes ?? null,
+    applied_date: app.appliedDate ? new Date(app.appliedDate).toISOString() : null,
+    interview_date: app.interviewDate ? new Date(app.interviewDate).toISOString() : null,
+    created_at: app.createdAt.toISOString(),
+    updated_at: app.updatedAt.toISOString(),
+  } as ApplicationRow;
 
-  const timeline = getTimeline(id);
-  const reminders = db
-    .prepare(
-      "SELECT * FROM reminders WHERE application_id = ? ORDER BY due_date ASC"
-    )
-    .all(id);
+  const timeline = await getTimeline(id);
+  const reminders = await prisma.reminder.findMany({ where: { applicationId: id }, orderBy: { dueDate: "asc" } });
 
   res.json({ ...serializeApplication(row), timeline, reminders });
 });
 
 // POST /api/applications
-router.post("/", (req, res) => {
+router.post("/", async (req, res) => {
   const b = req.body ?? {};
   const jobUrl = typeof b.job_url === "string" ? b.job_url.trim() : "";
 
@@ -176,93 +236,137 @@ router.post("/", (req, res) => {
 
   const status: Status = STATUSES.includes(b.status) ? b.status : "saved";
 
-  const info = db
-    .prepare(
-      `INSERT INTO applications
-        (company, position, location, status, job_description, requirements, skills,
-         salary, employment_type, application_deadline, source, job_url, cv_version_id,
-         cover_letter, notes, applied_date, interview_date)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-    )
-    .run(
-      b.company,
-      b.position,
-      b.location ?? null,
-      status,
-      b.job_description ?? null,
-      fromJsonArray(b.requirements),
-      fromJsonArray(b.skills),
-      b.salary ?? null,
-      b.employment_type ?? null,
-      b.application_deadline ?? null,
-      b.source ?? null,
-      b.job_url ?? null,
-      b.cv_version_id ?? null,
-      b.cover_letter ?? null,
-      b.notes ?? null,
-      b.applied_date ?? (status !== "saved" ? new Date().toISOString() : null),
-      b.interview_date ?? null
+  try {
+    const created = await prisma.application.create({
+      data: {
+        company: b.company,
+        position: b.position,
+        location: b.location ?? null,
+        status,
+        jobDescription: b.job_description ?? null,
+        requirements: fromJsonArray(b.requirements),
+        skills: fromJsonArray(b.skills),
+        salary: b.salary ?? null,
+        employmentType: b.employment_type ?? null,
+        applicationDeadline: b.application_deadline ? new Date(b.application_deadline) : null,
+        source: b.source ?? null,
+        jobUrl: b.job_url ?? null,
+        cvVersionId: b.cv_version_id ?? null,
+        coverLetter: b.cover_letter ?? null,
+        notes: b.notes ?? null,
+        appliedDate: b.applied_date ? new Date(b.applied_date) : status !== "saved" ? new Date() : null,
+        interviewDate: b.interview_date ? new Date(b.interview_date) : null,
+      },
+    });
+
+    const id = created.id;
+    addTimelineEvent(id, "saved", `Job saved: ${b.position} at ${b.company}`);
+    if (status !== "saved") {
+      addTimelineEvent(id, status, `Status set to ${status}`);
+    }
+
+    const createdRow = await prisma.application.findUnique({ where: { id } });
+    if (!createdRow) return res.status(500).json({ error: "Created application not found" });
+
+    res.status(201).json(
+      serializeApplication({
+        id: createdRow.id,
+        company: createdRow.company,
+        position: createdRow.position,
+        location: createdRow.location ?? null,
+        status: createdRow.status as Status,
+        job_description: createdRow.jobDescription ?? null,
+        requirements: Array.isArray(createdRow.requirements) ? JSON.stringify(createdRow.requirements) : createdRow.requirements ?? null,
+        skills: Array.isArray(createdRow.skills) ? JSON.stringify(createdRow.skills) : createdRow.skills ?? null,
+        salary: createdRow.salary ?? null,
+        employment_type: createdRow.employmentType ?? null,
+        application_deadline: createdRow.applicationDeadline ? new Date(createdRow.applicationDeadline).toISOString() : null,
+        source: createdRow.source ?? null,
+        job_url: createdRow.jobUrl ?? null,
+        cv_version_id: createdRow.cvVersionId ?? null,
+        cover_letter: createdRow.coverLetter ?? null,
+        notes: createdRow.notes ?? null,
+        applied_date: createdRow.appliedDate ? new Date(createdRow.appliedDate).toISOString() : null,
+        interview_date: createdRow.interviewDate ? new Date(createdRow.interviewDate).toISOString() : null,
+        created_at: createdRow.createdAt.toISOString(),
+        updated_at: createdRow.updatedAt.toISOString(),
+      } as ApplicationRow)
     );
-
-  const id = Number(info.lastInsertRowid);
-  addTimelineEvent(id, "saved", `Job saved: ${b.position} at ${b.company}`);
-  if (status !== "saved") {
-    addTimelineEvent(id, status, `Status set to ${status}`);
+  } catch (e) {
+    // Log full error for debugging (Prisma runtime errors can be verbose)
+    // eslint-disable-next-line no-console
+    console.error("Create application failed:", e);
+    const message = e instanceof Error ? e.message : "Create failed";
+    res.status(500).json({ error: `Failed to create application: ${message}` });
   }
-
-  const row = db
-    .prepare("SELECT * FROM applications WHERE id = ?")
-    .get(id) as unknown as ApplicationRow;
-  res.status(201).json(serializeApplication(row));
 });
 
 // PUT /api/applications/:id  (full edit)
-router.put("/:id", (req, res) => {
+router.put("/:id", async (req, res) => {
   const id = Number(req.params.id);
-  const existing = db
-    .prepare("SELECT * FROM applications WHERE id = ?")
-    .get(id) as unknown as ApplicationRow | undefined;
+  const existing = await prisma.application.findUnique({ where: { id } });
   if (!existing) return res.status(404).json({ error: "Application not found" });
 
   const b = req.body ?? {};
 
-  db.prepare(
-    `UPDATE applications SET
-      company = ?, position = ?, location = ?, job_description = ?, requirements = ?,
-      skills = ?, salary = ?, employment_type = ?, application_deadline = ?, source = ?,
-      job_url = ?, cv_version_id = ?, cover_letter = ?, notes = ?, applied_date = ?,
-      interview_date = ?, updated_at = datetime('now')
-     WHERE id = ?`
-  ).run(
-    b.company ?? existing.company,
-    b.position ?? existing.position,
-    b.location ?? existing.location,
-    b.job_description ?? existing.job_description,
-    b.requirements !== undefined ? fromJsonArray(b.requirements) : existing.requirements,
-    b.skills !== undefined ? fromJsonArray(b.skills) : existing.skills,
-    b.salary ?? existing.salary,
-    b.employment_type ?? existing.employment_type,
-    b.application_deadline ?? existing.application_deadline,
-    b.source ?? existing.source,
-    b.job_url ?? existing.job_url,
-    b.cv_version_id ?? existing.cv_version_id,
-    b.cover_letter ?? existing.cover_letter,
-    b.notes ?? existing.notes,
-    b.applied_date ?? existing.applied_date,
-    b.interview_date ?? existing.interview_date,
-    id
-  );
+  const updated = await prisma.application.update({
+    where: { id },
+    data: {
+      company: b.company ?? existing.company,
+      position: b.position ?? existing.position,
+      location: b.location ?? existing.location,
+      jobDescription: b.job_description ?? existing.jobDescription,
+      requirements: b.requirements !== undefined ? fromJsonArray(b.requirements) : (existing.requirements as any),
+      skills: b.skills !== undefined ? fromJsonArray(b.skills) : (existing.skills as any),
+      salary: b.salary ?? existing.salary,
+      employmentType: b.employmentType ?? existing.employmentType,
+      applicationDeadline: b.application_deadline ? new Date(b.application_deadline) : existing.applicationDeadline,
+      source: b.source ?? existing.source,
+      jobUrl: b.job_url ?? existing.jobUrl,
+      cvVersionId: b.cv_version_id ?? existing.cvVersionId,
+      coverLetter: b.cover_letter ?? existing.coverLetter,
+      notes: b.notes ?? existing.notes,
+      appliedDate: b.applied_date ? new Date(b.applied_date) : existing.appliedDate,
+      interviewDate: b.interview_date ? new Date(b.interview_date) : existing.interviewDate,
+      updatedAt: new Date(),
+    },
+  });
 
-  if (b.interview_date && b.interview_date !== existing.interview_date) {
+  if (b.interview_date && b.interview_date !== (existing.interviewDate ? existing.interviewDate.toISOString() : existing.interviewDate)) {
     addTimelineEvent(id, "interview_scheduled", `Interview set for ${b.interview_date}`);
   }
 
-  const row = db.prepare("SELECT * FROM applications WHERE id = ?").get(id) as unknown as ApplicationRow;
-  res.json(serializeApplication(row));
+  const updatedApp = await prisma.application.findUnique({ where: { id } });
+  if (!updatedApp) return res.status(500).json({ error: "Updated application not found" });
+
+  res.json(
+    serializeApplication({
+      id: updatedApp.id,
+      company: updatedApp.company,
+      position: updatedApp.position,
+      location: updatedApp.location ?? null,
+      status: updatedApp.status as Status,
+      job_description: updatedApp.jobDescription ?? null,
+      requirements: Array.isArray(updatedApp.requirements) ? JSON.stringify(updatedApp.requirements) : updatedApp.requirements ?? null,
+      skills: Array.isArray(updatedApp.skills) ? JSON.stringify(updatedApp.skills) : updatedApp.skills ?? null,
+      salary: updatedApp.salary ?? null,
+      employment_type: updatedApp.employmentType ?? null,
+      application_deadline: updatedApp.applicationDeadline ? new Date(updatedApp.applicationDeadline).toISOString() : null,
+      source: updatedApp.source ?? null,
+      job_url: updatedApp.jobUrl ?? null,
+      cv_version_id: updatedApp.cvVersionId ?? null,
+      cover_letter: updatedApp.coverLetter ?? null,
+      notes: updatedApp.notes ?? null,
+      applied_date: updatedApp.appliedDate ? new Date(updatedApp.appliedDate).toISOString() : null,
+      interview_date: updatedApp.interviewDate ? new Date(updatedApp.interviewDate).toISOString() : null,
+      created_at: updatedApp.createdAt.toISOString(),
+      updated_at: updatedApp.updatedAt.toISOString(),
+    } as ApplicationRow)
+  );
 });
 
 // PATCH /api/applications/:id/status  (drag-and-drop kanban move)
-router.patch("/:id/status", (req, res) => {
+router.patch("/:id/status", async (req, res) => {
   const id = Number(req.params.id);
   const { status } = req.body ?? {};
 
@@ -270,21 +374,15 @@ router.patch("/:id/status", (req, res) => {
     return res.status(400).json({ error: `status must be one of ${STATUSES.join(", ")}` });
   }
 
-  const existing = db
-    .prepare("SELECT * FROM applications WHERE id = ?")
-    .get(id) as unknown as ApplicationRow | undefined;
+  const existing = await prisma.application.findUnique({ where: { id } });
   if (!existing) return res.status(404).json({ error: "Application not found" });
 
-  const updates: string[] = ["status = ?", "updated_at = datetime('now')"];
-  const params: any[] = [status];
-
-  if (status === "applied" && !existing.applied_date) {
-    updates.push("applied_date = ?");
-    params.push(new Date().toISOString());
+  const data: any = { status, updatedAt: new Date() };
+  if (status === "applied" && !existing.appliedDate) {
+    data.appliedDate = new Date();
   }
 
-  params.push(id);
-  db.prepare(`UPDATE applications SET ${updates.join(", ")} WHERE id = ?`).run(...params);
+  await prisma.application.update({ where: { id }, data });
 
   addTimelineEvent(id, status, `Moved to ${status}`);
 
@@ -292,38 +390,62 @@ router.patch("/:id/status", (req, res) => {
   if (status === "applied") {
     const due = new Date();
     due.setDate(due.getDate() + 7);
-    db.prepare(
-      "INSERT INTO reminders (application_id, message, due_date) VALUES (?, ?, ?)"
-    ).run(id, `Follow up on ${existing.position} at ${existing.company}`, due.toISOString());
+    await prisma.reminder.create({ data: { applicationId: id, message: `Follow up on ${existing.position} at ${existing.company}`, dueDate: due } });
   }
 
-  const row = db.prepare("SELECT * FROM applications WHERE id = ?").get(id) as unknown as ApplicationRow;
-  res.json(serializeApplication(row));
+  const patched = await prisma.application.findUnique({ where: { id } });
+  if (!patched) return res.status(500).json({ error: "Application not found after status update" });
+
+  res.json(
+    serializeApplication({
+      id: patched.id,
+      company: patched.company,
+      position: patched.position,
+      location: patched.location ?? null,
+      status: patched.status as Status,
+      job_description: patched.jobDescription ?? null,
+      requirements: Array.isArray(patched.requirements) ? JSON.stringify(patched.requirements) : patched.requirements ?? null,
+      skills: Array.isArray(patched.skills) ? JSON.stringify(patched.skills) : patched.skills ?? null,
+      salary: patched.salary ?? null,
+      employment_type: patched.employmentType ?? null,
+      application_deadline: patched.applicationDeadline ? new Date(patched.applicationDeadline).toISOString() : null,
+      source: patched.source ?? null,
+      job_url: patched.jobUrl ?? null,
+      cv_version_id: patched.cvVersionId ?? null,
+      cover_letter: patched.coverLetter ?? null,
+      notes: patched.notes ?? null,
+      applied_date: patched.appliedDate ? new Date(patched.appliedDate).toISOString() : null,
+      interview_date: patched.interviewDate ? new Date(patched.interviewDate).toISOString() : null,
+      created_at: patched.createdAt.toISOString(),
+      updated_at: patched.updatedAt.toISOString(),
+    } as ApplicationRow)
+  );
 });
 
 // POST /api/applications/:id/timeline  (manual event, e.g. recruiter contacted)
-router.post("/:id/timeline", (req, res) => {
+router.post("/:id/timeline", async (req, res) => {
   const id = Number(req.params.id);
-  const existing = db.prepare("SELECT id FROM applications WHERE id = ?").get(id);
+  const existing = await prisma.application.findUnique({ where: { id }, select: { id: true } });
   if (!existing) return res.status(404).json({ error: "Application not found" });
 
   const { event_type, description, event_date } = req.body ?? {};
   if (!event_type) return res.status(400).json({ error: "event_type is required" });
 
-  db.prepare(
-    "INSERT INTO timeline_events (application_id, event_type, description, event_date) VALUES (?, ?, ?, COALESCE(?, datetime('now')))"
-  ).run(id, event_type, description ?? null, event_date ?? null);
+  await prisma.timelineEvent.create({ data: { applicationId: id, eventType: event_type, description: description ?? null, eventDate: event_date ? new Date(event_date) : new Date() } });
 
   touchUpdatedAt(id);
-  res.status(201).json(getTimeline(id));
+  res.status(201).json(await getTimeline(id));
 });
 
 // DELETE /api/applications/:id
-router.delete("/:id", (req, res) => {
+router.delete("/:id", async (req, res) => {
   const id = Number(req.params.id);
-  const info = db.prepare("DELETE FROM applications WHERE id = ?").run(id);
-  if (info.changes === 0) return res.status(404).json({ error: "Application not found" });
-  res.status(204).send();
+  try {
+    await prisma.application.delete({ where: { id } });
+    res.status(204).send();
+  } catch (e) {
+    res.status(404).json({ error: "Application not found" });
+  }
 });
 
 export default router;

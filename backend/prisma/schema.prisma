@@ -1,0 +1,77 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           Int      @id @default(autoincrement())
+  username     String   @unique
+  email        String?  @unique
+  passwordHash String?  @map("password_hash")
+  googleId     String?  @unique @map("google_id")
+  createdAt    DateTime @default(now()) @map("created_at")
+}
+
+model CvVersion {
+  id           Int           @id @default(autoincrement())
+  name         String
+  tag          String?
+  fileName     String?       @map("file_name")
+  createdAt    DateTime      @default(now()) @map("created_at")
+  applications Application[]
+}
+
+model Application {
+  id                  Int             @id @default(autoincrement())
+  company             String
+  position            String
+  location            String?
+  status              String          @default("saved")
+  jobDescription      String?         @map("job_description")
+  requirements        String[]        @default([])
+  skills              String[]        @default([])
+  salary              String?
+  employmentType      String?         @map("employment_type")
+  applicationDeadline DateTime?       @map("application_deadline")
+  source              String?
+  jobUrl              String?         @map("job_url")
+  cvVersionId         Int?            @map("cv_version_id")
+  coverLetter         String?         @map("cover_letter")
+  notes               String?
+  appliedDate         DateTime?       @map("applied_date")
+  interviewDate       DateTime?       @map("interview_date")
+  createdAt           DateTime        @default(now()) @map("created_at")
+  updatedAt           DateTime        @updatedAt @map("updated_at")
+  cvVersion           CvVersion?      @relation(fields: [cvVersionId], references: [id])
+  reminders           Reminder[]
+  timeline            TimelineEvent[]
+
+  @@index([status])
+}
+
+model TimelineEvent {
+  id            Int         @id @default(autoincrement())
+  applicationId Int         @map("application_id")
+  eventType     String      @map("event_type")
+  description   String?
+  eventDate     DateTime    @default(now()) @map("event_date")
+  application   Application @relation(fields: [applicationId], references: [id])
+
+  @@index([applicationId], map: "idx_timeline_app")
+}
+
+model Reminder {
+  id            Int         @id @default(autoincrement())
+  applicationId Int         @map("application_id")
+  message       String
+  dueDate       DateTime    @map("due_date")
+  completed     Boolean     @default(false)
+  createdAt     DateTime    @default(now()) @map("created_at")
+  application   Application @relation(fields: [applicationId], references: [id])
+
+  @@index([applicationId], map: "idx_reminders_app")
+}

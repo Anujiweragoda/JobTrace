@@ -1,33 +1,32 @@
 import { Router } from "express";
-import db from "../db";
+import prisma from "../prismaClient";
 
 const router = Router();
 
 // GET /api/cv-versions
-router.get("/", (req, res) => {
-  const rows = db.prepare("SELECT * FROM cv_versions ORDER BY created_at DESC").all();
+router.get("/", async (req, res) => {
+  const rows = await prisma.cvVersion.findMany({ orderBy: { createdAt: "desc" } });
   res.json(rows);
 });
 
 // POST /api/cv-versions  (metadata only - name/tag/file_name; no binary upload in this MVP)
-router.post("/", (req, res) => {
+router.post("/", async (req, res) => {
   const { name, tag, file_name } = req.body ?? {};
   if (!name) return res.status(400).json({ error: "name is required" });
 
-  const info = db
-    .prepare("INSERT INTO cv_versions (name, tag, file_name) VALUES (?, ?, ?)")
-    .run(name, tag ?? null, file_name ?? null);
-
-  const row = db.prepare("SELECT * FROM cv_versions WHERE id = ?").get(info.lastInsertRowid);
+  const row = await prisma.cvVersion.create({ data: { name, tag: tag ?? null, fileName: file_name ?? null } });
   res.status(201).json(row);
 });
 
 // DELETE /api/cv-versions/:id
-router.delete("/:id", (req, res) => {
+router.delete("/:id", async (req, res) => {
   const id = Number(req.params.id);
-  const info = db.prepare("DELETE FROM cv_versions WHERE id = ?").run(id);
-  if (info.changes === 0) return res.status(404).json({ error: "CV version not found" });
-  res.status(204).send();
+  try {
+    await prisma.cvVersion.delete({ where: { id } });
+    res.status(204).send();
+  } catch (e) {
+    res.status(404).json({ error: "CV version not found" });
+  }
 });
 
 export default router;

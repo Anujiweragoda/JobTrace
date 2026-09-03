@@ -7,16 +7,27 @@
     "build": "tsc",
     "start": "node dist/index.js",
     "dev": "ts-node src/index.ts",
-    "test": "node --import ts-node/register --test ./src/*.test.ts"
+    "test": "node --require ts-node/register --test ./src/*.test.ts",
+    "prisma:generate": "prisma generate",
+    "prisma:migrate": "prisma migrate dev --name init",
+    "prisma:studio": "prisma studio",
+    "test-db": "ts-node src/testDb.ts"
   },
   "dependencies": {
+    "@prisma/client": "^5.13.0",
     "cors": "^2.8.5",
-    "express": "^4.19.2"
+    "dotenv": "^17.4.2",
+    "express": "^4.19.2",
+    "google-auth-library": "^10.0.0",
+    "pg": "^8.11.0",
+    "puppeteer": "^25.9.0"
   },
   "devDependencies": {
     "@types/cors": "^2.8.17",
     "@types/express": "^4.17.21",
     "@types/node": "^22.10.0",
+    "@types/pg": "^8.23.1",
+    "prisma": "^5.13.0",
     "ts-node": "^10.9.2",
     "typescript": "^5.6.3"
   }

@@ -39,27 +39,34 @@ export function computeHealth(app: ApplicationRow): Health {
   return "active";
 }
 
-export function toJsonArray(value: string | null): string[] {
+export function toJsonArray(value: string | string[] | null): string[] {
   if (!value) return [];
+  if (Array.isArray(value)) return value;
   try {
     const parsed = JSON.parse(value);
     return Array.isArray(parsed) ? parsed : [];
   } catch {
-    return [];
+    return value
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean);
   }
 }
 
-export function fromJsonArray(value: unknown): string {
-  if (Array.isArray(value)) return JSON.stringify(value);
+export function fromJsonArray(value: unknown): string[] {
+  if (Array.isArray(value)) return value as string[];
   if (typeof value === "string") {
-    return JSON.stringify(
-      value
+    try {
+      const parsed = JSON.parse(value);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return value
         .split(",")
         .map((s) => s.trim())
-        .filter(Boolean)
-    );
+        .filter(Boolean);
+    }
   }
-  return JSON.stringify([]);
+  return [];
 }
 
 export function serializeApplication(row: ApplicationRow) {

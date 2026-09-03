@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { api } from "../api";
 import type { Application, CvVersion, Status } from "../types";
 import { STATUSES, STATUS_LABELS } from "../types";
 
@@ -61,15 +62,7 @@ export default function ApplicationModal({ initial, cvVersions, onClose, onSave 
     try {
       setFetchingUrl(true);
       setUrlFetchError("");
-      const preview = await fetch(`/api/applications/preview`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url }),
-      }).then(async (res) => {
-        const body = await res.json().catch(() => ({}));
-        if (!res.ok) throw new Error(body.error || "Could not fetch the job posting.");
-        return body;
-      });
+      const preview = await api.previewJobUrl(url);
 
       if (preview.company) set("company", preview.company);
       if (preview.position) set("position", preview.position);

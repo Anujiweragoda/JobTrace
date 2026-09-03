@@ -1,24 +1,21 @@
 import { Router } from "express";
-import db from "../db";
+import prisma from "../prismaClient";
 import { ApplicationRow, STATUSES } from "../types";
 import { computeHealth } from "../utils";
 
 const router = Router();
 
 // GET /api/analytics/dashboard  -> stats cards + kanban column counts
-router.get("/dashboard", (req, res) => {
+router.get("/dashboard", async (req, res) => {
   const counts: Record<string, number> = {};
   for (const s of STATUSES) {
-    const row = db
-      .prepare("SELECT COUNT(*) as c FROM applications WHERE status = ?")
-      .get(s) as { c: number };
-    counts[s] = row.c;
+    counts[s] = await prisma.application.count({ where: { status: s } });
   }
 
-  const total = db.prepare("SELECT COUNT(*) as c FROM applications").get() as { c: number };
+  const total = await prisma.application.count();
 
   res.json({
-    total: total.c,
+    total,
     applied: counts.applied + counts.screening + counts.interview + counts.offer + counts.rejected,
     interviews: counts.interview + counts.offer,
     rejected: counts.rejected,
@@ -28,52 +25,31 @@ router.get("/dashboard", (req, res) => {
 });
 
 // GET /api/analytics  -> full analytics page data
-router.get("/", (req, res) => {
-  const totalApplications = db
-    .prepare("SELECT COUNT(*) as c FROM applications WHERE status != 'saved'")
-    .get() as { c: number };
+router.get("/", async (req, res) => {
+  const totalApplicationsCount = await prisma.application.count({ where: { NOT: { status: "saved" } } });
 
-  const interviews = db
-    .prepare(
-      "SELECT COUNT(*) as c FROM applications WHERE status IN ('interview','offer','rejected') AND id IN (SELECT application_id FROM timeline_events WHERE event_type = 'interview')"
-    )
-    .get() as { c: number };
+  const interviewCountDistinct = await prisma.timelineEvent.findMany({ where: { eventType: "interview" }, distinct: ["applicationId"], select: { applicationId: true } });
 
-  const interviewCount = db
-    .prepare(
-      "SELECT COUNT(DISTINCT application_id) as c FROM timeline_events WHERE event_type = 'interview'"
-    )
-    .get() as { c: number };
+  const offersCount = await prisma.application.count({ where: { status: "offer" } });
 
-  const offers = db.prepare("SELECT COUNT(*) as c FROM applications WHERE status = 'offer'").get() as {
-    c: number;
-  };
+  const responseRate = totalApplicationsCount > 0 ? Math.round((interviewCountDistinct.length / totalApplicationsCount) * 100) : 0;
 
-  const responseRate =
-    totalApplications.c > 0
-      ? Math.round((interviewCount.c / totalApplications.c) * 100)
-      : 0;
+  const bySource = await prisma.$queryRaw`
+    SELECT COALESCE(source, 'Unspecified') as source, COUNT(*) as count FROM applications GROUP BY source ORDER BY count DESC
+  `;
 
-  const bySource = db
-    .prepare(
-      "SELECT COALESCE(source, 'Unspecified') as source, COUNT(*) as count FROM applications GROUP BY source ORDER BY count DESC"
-    )
-    .all();
+  const byEmploymentType = await prisma.$queryRaw`
+    SELECT COALESCE(employment_type, 'Unspecified') as employment_type, COUNT(*) as count FROM applications GROUP BY employment_type ORDER BY count DESC
+  `;
 
-  const byEmploymentType = db
-    .prepare(
-      "SELECT COALESCE(employment_type, 'Unspecified') as employment_type, COUNT(*) as count FROM applications GROUP BY employment_type ORDER BY count DESC"
-    )
-    .all();
-
-  const byStatus = db
-    .prepare("SELECT status, COUNT(*) as count FROM applications GROUP BY status")
-    .all();
+  const byStatus = await prisma.$queryRaw`
+    SELECT status, COUNT(*) as count FROM applications GROUP BY status
+  `;
 
   res.json({
-    totalApplications: totalApplications.c,
-    interviews: interviewCount.c,
-    offers: offers.c,
+    totalApplications: totalApplicationsCount,
+    interviews: interviewCountDistinct.length,
+    offers: offersCount,
     responseRate,
     bySource,
     byEmploymentType,
@@ -82,10 +58,8 @@ router.get("/", (req, res) => {
 });
 
 // GET /api/analytics/health-summary -> counts per health bucket, for follow-ups page
-router.get("/health-summary", (req, res) => {
-  const rows = db
-    .prepare("SELECT * FROM applications WHERE status NOT IN ('rejected','offer')")
-    .all() as unknown as ApplicationRow[];
+router.get("/health-summary", async (req, res) => {
+  const rows = (await prisma.$queryRaw`SELECT * FROM applications WHERE status NOT IN ('rejected','offer')`) as unknown as ApplicationRow[];
 
   const summary: Record<string, number> = {
     active: 0,
