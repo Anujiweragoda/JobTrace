@@ -4,6 +4,10 @@ import { createAuthToken, upsertGoogleUser, validateCredentials, verifyGoogleCre
 const router = Router();
 
 router.post("/login", async (req, res) => {
+  try {
+    // eslint-disable-next-line no-console
+    console.log("auth/login handler start: bodyKeys=", Object.keys(req.body || {}));
+  } catch {}
   const { username, password } = req.body ?? {};
 
   if (typeof username !== "string" || typeof password !== "string") {
@@ -19,6 +23,10 @@ router.post("/login", async (req, res) => {
 });
 
 router.post("/google", async (req, res) => {
+  try {
+    // eslint-disable-next-line no-console
+    console.log("auth/google handler start: hasCredential=", !!(req.body && req.body.credential));
+  } catch {}
   const { credential } = req.body ?? {};
 
   if (typeof credential !== "string" || !credential.trim()) {
@@ -42,6 +50,10 @@ router.post("/google", async (req, res) => {
 
 // POST /api/auth/signup
 router.post("/signup", async (req, res) => {
+  try {
+    // eslint-disable-next-line no-console
+    console.log("auth/signup handler start: bodyKeys=", Object.keys(req.body || {}));
+  } catch {}
   const { username, password, email } = req.body ?? {};
   if (typeof username !== "string" || typeof password !== "string") {
     return res.status(400).json({ error: "username and password are required" });
