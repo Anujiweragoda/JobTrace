@@ -9,9 +9,12 @@ import type {
   TimelineEvent,
 } from "./types";
 
-// Use direct backend URL in dev to avoid dev-proxy header issues;
-// in production the frontend is served together so use the relative `/api` path.
-const BASE = import.meta.env.DEV ? "http://localhost:4001/api" : "/api";
+// Use direct backend URL in dev to avoid dev-proxy header issues.
+// In production prefer an explicit `VITE_API_BASE` env var (e.g. https://api.example.com/api).
+// Fallback to the relative `/api` when not provided (monorepo deployment where frontend and backend share a domain).
+const BASE = import.meta.env.DEV
+  ? "http://localhost:4001/api"
+  : (import.meta.env.VITE_API_BASE ? String(import.meta.env.VITE_API_BASE) : "/api");
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
   const token = typeof window !== "undefined" ? localStorage.getItem("job-tracker-token") : null;
