@@ -1,14 +1,26 @@
 import { validateCredentials, createAuthToken } from "../../src/auth";
 import { disconnectPrisma } from "../../src/prismaClient";
 
+function setCorsHeaders(res: any) {
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  res.setHeader("Access-Control-Allow-Methods", "POST,OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
+}
+
 export default async function handler(req: any, res: any) {
   try {
     // eslint-disable-next-line no-console
     console.log("native auth/login invoked", req.method);
   } catch {}
 
+  // CORS preflight
+  setCorsHeaders(res);
+  if (req.method === "OPTIONS") {
+    return res.status(204).end();
+  }
+
   if (req.method !== "POST") {
-    res.setHeader("Allow", "POST");
+    res.setHeader("Allow", "POST,OPTIONS");
     return res.status(405).json({ error: "Method not allowed" });
   }
 
