@@ -6,6 +6,8 @@
   "routes": [
     { "src": "/api/ping", "dest": "/api/ping.ts" },
     { "src": "/api/health", "dest": "/api/ping.ts" },
+    { "src": "/api/debug", "dest": "/api/debug.ts" },
+    { "src": "/api/auth/login", "dest": "/api/auth/login.ts" },
     { "src": "/(.*)", "dest": "/api/index.ts" }
   ]
 }
