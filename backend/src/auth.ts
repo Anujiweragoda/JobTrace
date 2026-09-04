@@ -51,17 +51,21 @@ function verifyPassword(password: string, storedHash: string) {
   return crypto.timingSafeEqual(expected, actual);
 }
 
-function ensureDefaultUser() {
-  void (async () => {
+let _defaultUserEnsured = false;
+async function ensureDefaultUserOnce() {
+  if (_defaultUserEnsured) return;
+  _defaultUserEnsured = true;
+  try {
     const existing = await prisma.user.findUnique({ where: { username: DEFAULT_USER } });
     if (!existing) {
       const passwordHash = hashPassword(DEFAULT_PASSWORD);
       await prisma.user.create({ data: { username: DEFAULT_USER, passwordHash } });
     }
-  })();
+  } catch (e) {
+    // eslint-disable-next-line no-console
+    console.error("ensureDefaultUserOnce failed:", e);
+  }
 }
-
-ensureDefaultUser();
 
 export function validateCredentials(username: string, password: string) {
   return (async () => {
@@ -188,6 +192,8 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
   }
 
   try {
+    // Ensure default user exists on-demand rather than at module import time
+    await ensureDefaultUserOnce();
     const user = await prisma.user.findUnique({ where: { username } });
     if (!user) return res.status(401).json({ error: "Invalid user." });
     req.user = { username, id: user.id };
