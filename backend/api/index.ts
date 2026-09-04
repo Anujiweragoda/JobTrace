@@ -9,6 +9,32 @@ export default async function handler(req: any, res: any) {
 		console.log("serverless handler invoked:", req?.method, req?.url);
 	} catch {}
 
+	// Short-circuit common read-only endpoints that must not touch the DB
+	// so the function stays fast when the DB is unavailable. This is a
+	// temporary safety shim for production to avoid FUNCTION_INVOCATION_TIMEOUT
+	// while the underlying DB/connectivity is fixed.
+	try {
+		const url = req?.url || "";
+		const method = (req?.method || "GET").toUpperCase();
+		if (method === "OPTIONS") {
+			res.setHeader("Access-Control-Allow-Origin", req.headers?.origin || "*");
+			res.setHeader("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
+			res.setHeader("Access-Control-Allow-Headers", "Content-Type,Authorization");
+			res.setHeader("Access-Control-Allow-Credentials", "true");
+			return res.status(204).end();
+		}
+
+		// Fast fallback for GET /api/applications to return an empty list
+		// without importing the app or touching the DB.
+		if (method === "GET" && typeof url === "string" && url.startsWith("/api/applications")) {
+			res.setHeader("Access-Control-Allow-Origin", req.headers?.origin || "*");
+			res.setHeader("Access-Control-Allow-Credentials", "true");
+			return res.status(200).json([]);
+		}
+	} catch (e) {
+		// ignore and fall through to normal handler
+	}
+
 	if (!cachedHandler) {
 		try {
 			// eslint-disable-next-line no-console
