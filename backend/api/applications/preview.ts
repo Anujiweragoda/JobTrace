@@ -4,21 +4,33 @@ import { verifyToken } from "../../src/auth";
 
 async function fetchJobPageHtml(url: string): Promise<string> {
   const candidates = [url, `https://r.jina.ai/http://${url}`];
+  const perRequestTimeout = 8000; // ms
 
   for (const candidate of candidates) {
+    // eslint-disable-next-line no-console
+    console.log("preview: trying candidate", candidate);
     try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), perRequestTimeout);
       const response = await fetch(candidate, {
+        signal: controller.signal,
         headers: {
           "User-Agent": "Mozilla/5.0 (compatible; JobTracker/1.0; +https://localhost)",
           Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
         },
       });
+      clearTimeout(timeout);
+
+      // eslint-disable-next-line no-console
+      console.log("preview: candidate response", candidate, response.status);
 
       if (!response.ok) continue;
 
       const html = await response.text();
       if (html && html.trim()) return html;
-    } catch {
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.warn("preview: fetch candidate failed", candidate, err && (err.name || err.message));
       continue;
     }
   }
