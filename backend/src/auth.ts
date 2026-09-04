@@ -69,6 +69,7 @@ async function ensureDefaultUserOnce() {
 
 export function validateCredentials(username: string, password: string) {
   return (async () => {
+    await ensureDefaultUserOnce();
     const user = await prisma.user.findUnique({ where: { username } });
     if (!user || !user.passwordHash) return false;
     return verifyPassword(password, user.passwordHash);
@@ -76,6 +77,7 @@ export function validateCredentials(username: string, password: string) {
 }
 
 export async function createUser(username: string, password: string, email?: string) {
+  await ensureDefaultUserOnce();
   const safeUsername = (username || "").trim();
   if (!safeUsername || typeof password !== "string" || password.length < 6) {
     throw new Error("Invalid username or password (min 6 chars)");
@@ -94,6 +96,7 @@ export async function createUser(username: string, password: string, email?: str
 export function upsertGoogleUser(email: string, name: string, googleId: string) {
   const safeUsername = (name || email.split("@")[0] || "user").trim();
   return (async () => {
+    await ensureDefaultUserOnce();
     const existing = await prisma.user.findFirst({ where: { OR: [{ email }, { googleId }] } });
     if (existing) {
       const username = existing.username || safeUsername;
