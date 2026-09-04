@@ -61,6 +61,13 @@ async function fetchJobPageHtml(url: string): Promise<string> {
 
 export default async function handler(req: any, res: any) {
   try {
+    // DEBUG: log incoming request method, auth header presence, and body for troubleshooting
+    try {
+      // avoid logging full tokens in case of sensitive data
+      const auth = req.headers?.authorization ? (String(req.headers.authorization).startsWith("Bearer ") ? `Bearer ${String(req.headers.authorization).slice(7, 15)}...` : String(req.headers.authorization)) : null;
+      // eslint-disable-next-line no-console
+      console.log("/applications/preview incoming", { method: req.method, auth, body: req.body });
+    } catch (e) {}
     // CORS
     const origin = req.headers?.origin || "*";
     res.setHeader("Access-Control-Allow-Origin", origin);
