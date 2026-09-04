@@ -32,20 +32,31 @@ export default async function handler(req: any, res: any) {
 
 	try {
 		// Instrument response to detect when the handler finishes.
-		const originalEnd = res && res.end;
-		let finished = false;
-		if (originalEnd) {
-			res.end = function (...args: any[]) {
-				if (!finished) {
-					finished = true;
+		// Hook response methods and finish event to detect when response completes.
+		try {
+			if (res) {
+				res.once && res.once("finish", () => {
 					try {
 						// eslint-disable-next-line no-console
-						console.log("serverless handler: response end called, statusCode:", res.statusCode);
+						console.log("serverless handler: response finished, statusCode:", res.statusCode);
 					} catch {}
+				});
+
+				const origEnd = res.end;
+				if (typeof origEnd === "function") {
+					res.end = function (...args: any[]) {
+						try {
+							// eslint-disable-next-line no-console
+							console.log("serverless handler: res.end called");
+						} catch {}
+						// @ts-ignore
+						return origEnd.apply(this, args);
+					};
 				}
-				// @ts-ignore
-				return originalEnd.apply(this, args);
-			};
+			}
+		} catch (e) {
+			// eslint-disable-next-line no-console
+			console.error("serverless handler: response hook setup failed:", e);
 		}
 
 		try {
