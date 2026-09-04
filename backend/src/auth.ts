@@ -19,8 +19,9 @@ declare global {
 }
 
 const SESSION_SECRET = process.env.JWT_SECRET || "job-tracker-local-secret";
-const DEFAULT_USER = "admin";
-const DEFAULT_PASSWORD = "admin123";
+// Default admin account no longer hard-coded. Provide via env vars to enable seeding in CI/dev only.
+const DEFAULT_USER = process.env.DEFAULT_USER || "";
+const DEFAULT_PASSWORD = process.env.DEFAULT_PASSWORD || "";
 const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID || "";
 const googleClient = GOOGLE_CLIENT_ID && OAuth2Client ? new OAuth2Client(GOOGLE_CLIENT_ID) : null;
 
@@ -56,10 +57,19 @@ async function ensureDefaultUserOnce() {
   if (_defaultUserEnsured) return;
   _defaultUserEnsured = true;
   try {
-    const existing = await prisma.user.findUnique({ where: { username: DEFAULT_USER } });
+    const existing = DEFAULT_USER ? await prisma.user.findUnique({ where: { username: DEFAULT_USER } }) : null;
     if (!existing) {
+      if (!DEFAULT_USER || !DEFAULT_PASSWORD) {
+        // No default credentials configured via env — do not auto-seed.
+        // eslint-disable-next-line no-console
+        console.warn("ensureDefaultUserOnce: DEFAULT_USER/DEFAULT_PASSWORD not set; skipping auto-seed");
+        return;
+      }
+
       const passwordHash = hashPassword(DEFAULT_PASSWORD);
       await prisma.user.create({ data: { username: DEFAULT_USER, passwordHash } });
+      // eslint-disable-next-line no-console
+      console.log("ensureDefaultUserOnce: created default user from env DEFAULT_USER");
     }
   } catch (e) {
     // eslint-disable-next-line no-console
