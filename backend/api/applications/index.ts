@@ -2,8 +2,18 @@ import prisma from "../../src/prismaClient";
 import { serializeApplication, fromJsonArray } from "../../src/utils";
 import { verifyToken } from "../../src/auth";
 
+function setCorsHeaders(req: any, res: any) {
+  const origin = req.headers?.origin || "*";
+  res.setHeader("Access-Control-Allow-Origin", origin);
+  res.setHeader("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type,Authorization");
+  res.setHeader("Access-Control-Allow-Credentials", "true");
+}
+
 export default async function handler(req: any, res: any) {
   try {
+    setCorsHeaders(req, res);
+    if (req.method === "OPTIONS") return res.status(204).end();
     if (req.method === "GET") {
       const { search, status, source } = req.query ?? {};
 

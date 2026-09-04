@@ -8,6 +8,14 @@ async function getTimeline(applicationId: number) {
 
 export default async function handler(req: any, res: any) {
   try {
+    // CORS
+    const origin = req.headers?.origin || "*";
+    res.setHeader("Access-Control-Allow-Origin", origin);
+    res.setHeader("Access-Control-Allow-Methods", "GET,OPTIONS");
+    res.setHeader("Access-Control-Allow-Headers", "Content-Type,Authorization");
+    res.setHeader("Access-Control-Allow-Credentials", "true");
+    if (req.method === "OPTIONS") return res.status(204).end();
+
     if (req.method !== "GET") return res.status(405).json({ error: "Method not allowed" });
 
     const authHeader = req.headers?.authorization || "";
