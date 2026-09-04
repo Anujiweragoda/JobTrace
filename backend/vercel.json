@@ -11,6 +11,9 @@
     { "src": "/api/auth/signup", "dest": "/api/auth/signup.ts" },
     { "src": "/api/auth/me", "dest": "/api/auth/me.ts" },
     { "src": "/api/auth/google", "dest": "/api/auth/google.ts" },
+    { "src": "/api/applications/preview", "methods": ["POST"], "dest": "/api/applications/preview.ts" },
+    { "src": "/api/applications", "methods": ["GET","POST"], "dest": "/api/applications/index.ts" },
+    { "src": "/api/applications/([^/]+)$", "methods": ["GET"], "dest": "/api/applications/[id].ts" },
     { "src": "/(.*)", "dest": "/api/index.ts" }
   ]
 }
