@@ -53,28 +53,11 @@ function verifyPassword(password: string, storedHash: string) {
 }
 
 let _defaultUserEnsured = false;
+// Seeding disabled: no auto-creation of default users in any environment.
 async function ensureDefaultUserOnce() {
   if (_defaultUserEnsured) return;
   _defaultUserEnsured = true;
-  try {
-    const existing = DEFAULT_USER ? await prisma.user.findUnique({ where: { username: DEFAULT_USER } }) : null;
-    if (!existing) {
-      if (!DEFAULT_USER || !DEFAULT_PASSWORD) {
-        // No default credentials configured via env — do not auto-seed.
-        // eslint-disable-next-line no-console
-        console.warn("ensureDefaultUserOnce: DEFAULT_USER/DEFAULT_PASSWORD not set; skipping auto-seed");
-        return;
-      }
-
-      const passwordHash = hashPassword(DEFAULT_PASSWORD);
-      await prisma.user.create({ data: { username: DEFAULT_USER, passwordHash } });
-      // eslint-disable-next-line no-console
-      console.log("ensureDefaultUserOnce: created default user from env DEFAULT_USER");
-    }
-  } catch (e) {
-    // eslint-disable-next-line no-console
-    console.error("ensureDefaultUserOnce failed:", e);
-  }
+  return;
 }
 
 export function validateCredentials(username: string, password: string) {
