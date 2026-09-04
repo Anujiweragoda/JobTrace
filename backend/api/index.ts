@@ -24,12 +24,16 @@ export default async function handler(req: any, res: any) {
 			return res.status(204).end();
 		}
 
-		// Fast fallback for GET /api/applications to return an empty list
-		// without importing the app or touching the DB.
-		if (method === "GET" && typeof url === "string" && url.startsWith("/api/applications")) {
-			res.setHeader("Access-Control-Allow-Origin", req.headers?.origin || "*");
-			res.setHeader("Access-Control-Allow-Credentials", "true");
-			return res.status(200).json([]);
+		// Fast fallback for GET /api/applications and GET /api/cv-versions to return
+		// empty lists without importing the app or touching the DB. This ensures
+		// the frontend's initial `loadAll()` (which waits for both endpoints)
+		// completes quickly when the DB is unavailable so tabs and routing work.
+		if (method === "GET" && typeof url === "string") {
+			if (url.startsWith("/api/applications") || url.startsWith("/api/cv-versions")) {
+				res.setHeader("Access-Control-Allow-Origin", req.headers?.origin || "*");
+				res.setHeader("Access-Control-Allow-Credentials", "true");
+				return res.status(200).json([]);
+			}
 		}
 	} catch (e) {
 		// ignore and fall through to normal handler
