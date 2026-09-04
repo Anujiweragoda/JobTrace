@@ -8,27 +8,9 @@ function initPrisma() {
 		console.log("Prisma lazy init: creating client");
 		_prisma = new PrismaClient();
 
-		// Try to connect in the background and log results so we can detect connection problems early.
-		try {
-			_prisma.$connect()
-				.then(() => {
-					// eslint-disable-next-line no-console
-					console.log("Prisma lazy init: connected to database");
-				})
-				.catch((e) => {
-					// eslint-disable-next-line no-console
-					console.error("Prisma lazy init: $connect() failed:", e);
-				});
-
-			// If connection hasn't resolved after 15s, warn in logs.
-			setTimeout(() => {
-				// eslint-disable-next-line no-console
-				console.warn("Prisma lazy init: connection still pending after 15s");
-			}, 15000);
-		} catch (e) {
-			// eslint-disable-next-line no-console
-			console.error("Prisma lazy init: connect attempt threw:", e);
-		}
+		// Note: Do NOT call $connect() here in serverless environments —
+		// opening persistent DB connections can keep the process alive and
+		// cause function timeouts. Let Prisma connect lazily on first query.
 		// eslint-disable-next-line no-console
 		console.log("Prisma lazy init: client created");
 	}
@@ -52,3 +34,19 @@ const handler: ProxyHandler<any> = {
 const proxy = new Proxy(function () {}, handler) as unknown as PrismaClient;
 
 export default proxy;
+
+export async function disconnectPrisma() {
+	if (_prisma) {
+		try {
+			// eslint-disable-next-line no-console
+			console.log("Prisma: disconnecting client");
+			await _prisma.$disconnect();
+			// eslint-disable-next-line no-console
+			console.log("Prisma: disconnected");
+		} catch (e) {
+			// eslint-disable-next-line no-console
+			console.error("Prisma: $disconnect() failed:", e);
+		}
+		_prisma = null;
+	}
+}

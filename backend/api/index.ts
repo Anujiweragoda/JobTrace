@@ -1,4 +1,5 @@
 import serverless from "serverless-http";
+import { disconnectPrisma } from "../src/prismaClient";
 
 let cachedHandler: any = null;
 
@@ -84,6 +85,16 @@ export default async function handler(req: any, res: any) {
 			// eslint-disable-next-line no-console
 			console.log("serverless handler: cached handler finished invocation");
 		} catch {}
+
+		try {
+			// Attempt to disconnect Prisma to avoid leaving open sockets in serverless.
+			await disconnectPrisma().catch(() => {});
+			// eslint-disable-next-line no-console
+			console.log("serverless handler: prisma disconnect attempted");
+		} catch (e) {
+			// eslint-disable-next-line no-console
+			console.error("serverless handler: prisma disconnect failed:", e);
+		}
 
 		return;
 	} catch (e) {
