@@ -8,6 +8,9 @@ import authRouter from "./routes/auth";
 import profileRouter from "./routes/profile";
 import { requireAuth } from "./auth";
 
+// eslint-disable-next-line no-console
+console.log("Express app module loaded");
+
 const app = express();
 const PORT = process.env.PORT ? Number(process.env.PORT) : 4001;
 
