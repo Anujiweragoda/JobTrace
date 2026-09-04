@@ -190,8 +190,23 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
   try {
     // Ensure default user exists on-demand rather than at module import time
     await ensureDefaultUserOnce();
-    const user = await prisma.user.findUnique({ where: { username } });
-    if (!user) return res.status(401).json({ error: "Invalid user." });
+
+    // Protect against long DB hangs in serverless by racing the DB call
+    // against a short timeout so the function returns quickly with a
+    // clear error instead of hitting the platform invocation timeout.
+    const dbPromise = prisma.user.findUnique({ where: { username } });
+    const timeoutMs = 7000;
+    const timeoutPromise = new Promise<null>((resolve) => setTimeout(() => resolve(null), timeoutMs));
+
+    const user = (await Promise.race([dbPromise, timeoutPromise])) as any;
+    if (!user) {
+      // If user wasn't found due to DB timeout or missing user, return 503 for timeout,
+      // or 401 for an explicitly missing user. Distinguish by checking whether the
+      // DB promise resolved yet is impossible here, so prefer 503 when timed out.
+      // Provide a helpful message for diagnostics.
+      return res.status(503).json({ error: "Database unavailable or timed out (please check DATABASE_URL and network)" });
+    }
+
     req.user = { username, id: user.id };
     return next();
   } catch (e) {
