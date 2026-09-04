@@ -213,35 +213,33 @@ export default function App() {
           <button className="btn btn-secondary" onClick={handleLogout}>Logout</button>
         </div>
 
-        {loading ? (
-          <p style={{ color: "var(--ink-muted)" }}>Loading…</p>
-        ) : (
-          <>
-            {tab === "dashboard" && (
-              <Dashboard
-                applications={applications}
-                onOpen={setDetailId}
-                onMove={handleMove}
-                onAdd={() => setAddOpen(true)}
-              />
-            )}
-            {tab === "applications" && (
-              <ApplicationsList
-                applications={applications}
-                onOpen={setDetailId}
-                onAdd={() => setAddOpen(true)}
-              />
-            )}
-            {tab === "followups" && (
-              <FollowUps applications={applications} onOpen={setDetailId} />
-            )}
-            {tab === "analytics" && <Analytics />}
-            {tab === "cv" && (
-              <CvVersions cvVersions={cvVersions} onChanged={refreshCvVersions} />
-            )}
-            {tab === "profile" && <Profile />}
-          </>
-        )}
+        <>
+          {loading && <p style={{ color: "var(--ink-muted)" }}>Loading…</p>}
+
+          {tab === "dashboard" && (
+            <Dashboard
+              applications={applications}
+              onOpen={setDetailId}
+              onMove={handleMove}
+              onAdd={() => setAddOpen(true)}
+            />
+          )}
+          {tab === "applications" && (
+            <ApplicationsList
+              applications={applications}
+              onOpen={setDetailId}
+              onAdd={() => setAddOpen(true)}
+            />
+          )}
+          {tab === "followups" && (
+            <FollowUps applications={applications} onOpen={setDetailId} />
+          )}
+          {tab === "analytics" && <Analytics />}
+          {tab === "cv" && (
+            <CvVersions cvVersions={cvVersions} onChanged={refreshCvVersions} />
+          )}
+          {tab === "profile" && <Profile />}
+        </>
       </main>
 
       {addOpen && (
