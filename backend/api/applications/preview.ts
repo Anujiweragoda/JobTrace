@@ -36,7 +36,16 @@ async function fetchJobPageHtml(url: string): Promise<string> {
   }
 
   try {
-    // optional puppeteer fallback
+    // In serverless production environments (Vercel), Puppeteer cold-starts and
+    // binary availability often cause long delays or function failures. Skip
+    // the Puppeteer fallback in production to avoid function invocation timeouts.
+    if (process.env.VERCEL || process.env.NODE_ENV === "production") {
+      // eslint-disable-next-line no-console
+      console.warn("preview: skipping puppeteer fallback in production/serverless");
+      throw new Error("skip-puppeteer");
+    }
+
+    // optional puppeteer fallback for local/dev where it's available
     // eslint-disable-next-line @typescript-eslint/no-var-requires
     const puppeteer = require("puppeteer");
     const browser = await puppeteer.launch({ args: ["--no-sandbox", "--disable-setuid-sandbox"] });
@@ -65,7 +74,7 @@ async function fetchJobPageHtml(url: string): Promise<string> {
       } catch {}
     }
   } catch (e) {
-    // puppeteer not available or failed
+    // puppeteer not available, skipped, or failed
   }
 
   throw new Error("The job page is blocking automated fetches, so its details could not be parsed automatically.");
