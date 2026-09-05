@@ -2,6 +2,50 @@ import prisma from "../../src/prismaClient";
 import { extractJobDetailsFromHtml } from "../../src/scrapeJobUrl";
 import { verifyToken } from "../../src/auth";
 
+function buildPreviewFromHtml(html: string, parsedUrl: URL, deriveCompany: () => string, derivePosition: () => string, domain: string) {
+  const titleMatch = html.match(/<title[^>]*>([^<]+)<\/title>/i);
+  const descMatch = html.match(/<meta[^>]+name=["']description["'][^>]*content=["']([^"']+)["'][^>]*>/i) || html.match(/<meta[^>]+property=["']og:description["'][^>]*content=["']([^"']+)["'][^>]*>/i);
+  const title = titleMatch ? titleMatch[1].trim() : null;
+  const desc = descMatch ? descMatch[1].trim() : null;
+  let company = deriveCompany();
+  let position = derivePosition();
+  if (title) {
+    const sep = title.includes(" - ") ? " - " : title.includes(" | ") ? " | " : null;
+    if (sep) {
+      const [a, b] = title.split(sep).map((s) => s.trim());
+      if (b && b.toLowerCase().includes(domain)) {
+        company = a;
+        position = b;
+      } else if (a && a.toLowerCase().includes(domain)) {
+        company = a;
+        position = b || position;
+      } else {
+        if (a && b) {
+          position = a.length >= b.length ? a : b;
+          company = a.length >= b.length ? b : a;
+        } else {
+          position = a || position;
+        }
+      }
+    } else {
+      if (!title.toLowerCase().includes(domain)) position = title;
+    }
+  }
+
+  return {
+    company: company || null,
+    position: position || null,
+    location: null,
+    job_description: desc || title || null,
+    requirements: [],
+    skills: [],
+    salary: null,
+    employment_type: null,
+    source: parsedUrl.origin,
+    warning: "Heuristic preview — please verify and adjust any fields.",
+  };
+}
+
 async function fetchJobPageHtml(url: string): Promise<string> {
   const candidates = [url, `https://r.jina.ai/http://${url}`];
   const perRequestTimeout = 8000; // ms
@@ -28,17 +72,15 @@ async function fetchJobPageHtml(url: string): Promise<string> {
 
       const html = await response.text();
       if (html && html.trim()) return html;
-    } catch (err) {
+    } catch (err: any) {
       // eslint-disable-next-line no-console
       console.warn("preview: fetch candidate failed", candidate, err && (err.name || err.message));
       continue;
     }
   }
 
-    try {
-    // Use puppeteer-core + @sparticuz/chromium in production/serverless to
-    // reliably launch a compatible Chromium binary on Vercel. In local dev
-    // fallback to a locally installed Chrome/Chromium via puppeteer-core default.
+  // Try headless browser fallback (puppeteer-core + @sparticuz/chromium when available)
+  try {
     // eslint-disable-next-line @typescript-eslint/no-var-requires
     const puppeteer = require("puppeteer-core");
     // eslint-disable-next-line @typescript-eslint/no-var-requires
@@ -51,7 +93,6 @@ async function fetchJobPageHtml(url: string): Promise<string> {
     };
 
     if (process.env.VERCEL || process.env.NODE_ENV === "production") {
-      // Use chromium.executablePath() in production
       launchOptions.executablePath = chromium.executablePath();
     }
 
@@ -70,18 +111,18 @@ async function fetchJobPageHtml(url: string): Promise<string> {
             await browser.close();
             return content;
           }
-        } catch (e) {
+        } catch (e: any) {
           continue;
         }
       }
       await browser.close();
-    } catch (e) {
+    } catch (e: any) {
       try {
         await browser.close();
       } catch {}
     }
-  } catch (e) {
-    // puppeteer-core/chromium failed — fall through to error
+  } catch (e: any) {
+    // puppeteer-core/chromium not available or failed — fall through to error
   }
 
   throw new Error("The job page is blocking automated fetches, so its details could not be parsed automatically.");
@@ -91,11 +132,15 @@ export default async function handler(req: any, res: any) {
   try {
     // DEBUG: log incoming request method, auth header presence, and body for troubleshooting
     try {
-      // avoid logging full tokens in case of sensitive data
-      const auth = req.headers?.authorization ? (String(req.headers.authorization).startsWith("Bearer ") ? `Bearer ${String(req.headers.authorization).slice(7, 15)}...` : String(req.headers.authorization)) : null;
+      const auth = req.headers?.authorization
+        ? (String(req.headers.authorization).startsWith("Bearer ")
+            ? `Bearer ${String(req.headers.authorization).slice(7, 15)}...`
+            : String(req.headers.authorization))
+        : null;
       // eslint-disable-next-line no-console
       console.log("/applications/preview incoming", { method: req.method, auth, body: req.body });
-    } catch (e) {}
+    } catch (e: any) {}
+
     // CORS
     const origin = req.headers?.origin || "*";
     res.setHeader("Access-Control-Allow-Origin", origin);
@@ -121,93 +166,44 @@ export default async function handler(req: any, res: any) {
       return res.status(400).json({ error: "The job URL is not valid." });
     }
 
-    try {
-      // In production/serverless the outbound fetch often fails or times out.
-      // For urgent demos, return a fast canned preview so the UI remains usable.
-      if (process.env.VERCEL || process.env.NODE_ENV === "production") {
-        // In production/serverless, attempt real scraping with puppeteer-core + chromium
-        // (handled above) or via ScrapingBee if configured. The heuristic fallback
-        // below only runs if scraping fails.
-        // eslint-disable-next-line no-console
-        console.log("preview: production mode — attempting scraping/scrapingBee");
-        const hostname = parsedUrl.hostname.replace(/^www\./, "");
-        const domain = hostname.split(".")[0] || hostname;
-        const deriveCompany = () => {
-          // Try to get a nicer company name from the host
-          return domain.replace(/[-_]+/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
-        };
-        const derivePosition = () => {
-          // Use path segments as a fallback position
-          const parts = parsedUrl.pathname.split("/").filter(Boolean);
-          if (parts.length === 0) return "Job application";
-          const last = parts[parts.length - 1].replace(/[-_]+/g, " ");
-          return last.replace(/\b\w/g, (c) => c.toUpperCase());
-        };
+    // Production: try ScrapingBee -> proxy -> heuristic
+    if (process.env.VERCEL || process.env.NODE_ENV === "production") {
+      // eslint-disable-next-line no-console
+      console.log("preview: production mode — attempting scraping/scrapingBee");
+      const hostname = parsedUrl.hostname.replace(/^www\./, "");
+      const domain = hostname.split(".")[0] || hostname;
+      const deriveCompany = () => domain.replace(/[-_]+/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+      const derivePosition = () => {
+        const parts = parsedUrl.pathname.split("/").filter(Boolean);
+        if (parts.length === 0) return "Job application";
+        const last = parts[parts.length - 1].replace(/[-_]+/g, " ");
+        return last.replace(/\b\w/g, (c) => c.toUpperCase());
+      };
 
-        // attempt fast proxy fetch
-        try {
-          // If a paid scraping service key is provided, prefer it (more reliable).
-          const scrapingBeeKey = process.env.SCRAPINGBEE_KEY;
-          if (scrapingBeeKey) {
-            const apiUrl = `https://app.scrapingbee.com/api/v1?api_key=${encodeURIComponent(
-              scrapingBeeKey
-            )}&url=${encodeURIComponent(parsedUrl.toString())}&render_js=false`;
+      try {
+        const scrapingBeeKey = process.env.SCRAPINGBEE_KEY;
+        if (scrapingBeeKey) {
+          const apiUrl = `https://app.scrapingbee.com/api/v1?api_key=${encodeURIComponent(
+            scrapingBeeKey
+          )}&url=${encodeURIComponent(parsedUrl.toString())}&render_js=false`;
+          try {
             const controller = new AbortController();
             const timeout = setTimeout(() => controller.abort(), 5000);
             const r = await fetch(apiUrl, { signal: controller.signal, headers: { Accept: "text/html" } });
             clearTimeout(timeout);
             if (r.ok) {
               const html = await r.text();
-            // extract title and meta description if present
-            const titleMatch = html.match(/<title[^>]*>([^<]+)<\/title>/i);
-            const descMatch = html.match(/<meta[^>]+name=["']description["'][^>]*content=["']([^"']+)["'][^>]*>/i) || html.match(/<meta[^>]+property=["']og:description["'][^>]*content=["']([^"']+)["'][^>]*>/i);
-            const title = titleMatch ? titleMatch[1].trim() : null;
-            const desc = descMatch ? descMatch[1].trim() : null;
-            let company = deriveCompany();
-            let position = derivePosition();
-            if (title) {
-              // If title contains separators, try to split into position/company
-              const sep = title.includes(" - ") ? " - " : title.includes(" | ") ? " | " : null;
-              if (sep) {
-                const [a, b] = title.split(sep).map((s) => s.trim());
-                // pick which looks like company (contains domain words)
-                if (b && b.toLowerCase().includes(domain)) {
-                  company = a;
-                  position = b;
-                } else if (a && a.toLowerCase().includes(domain)) {
-                  company = a;
-                  position = b || position;
-                } else {
-                  // heuristics: longer segment -> position
-                  if (a && b) {
-                    position = a.length >= b.length ? a : b;
-                    company = a.length >= b.length ? b : a;
-                  } else {
-                    position = a || position;
-                  }
-                }
-              } else {
-                // no separator — treat title as position if it's not the domain
-                if (!title.toLowerCase().includes(domain)) position = title;
-              }
+              const result = buildPreviewFromHtml(html, parsedUrl, deriveCompany, derivePosition, domain);
+              return res.json(result);
             }
-
-            return res.json({
-              company: company || null,
-              position: position || null,
-              location: null,
-              job_description: desc || title || null,
-              requirements: [],
-              skills: [],
-              salary: null,
-              employment_type: null,
-              source: parsedUrl.origin,
-              warning: "Heuristic preview — please verify and adjust any fields.",
-            });
-            }
+          } catch (e: any) {
+            // eslint-disable-next-line no-console
+            console.warn("preview: scrapingBee fetch failed", e && (e.name || e.message));
           }
+        }
 
-          // fallback to public proxy
+        // fallback to public proxy
+        try {
           const proxy = `https://r.jina.ai/http://${parsedUrl.host}${parsedUrl.pathname}${parsedUrl.search}`;
           const controller = new AbortController();
           const timeout = setTimeout(() => controller.abort(), 3000);
@@ -215,40 +211,47 @@ export default async function handler(req: any, res: any) {
           clearTimeout(timeout);
           if (r.ok) {
             const html = await r.text();
-        } catch (e) {
-          // ignore and fall back to heuristics
+            const result = buildPreviewFromHtml(html, parsedUrl, deriveCompany, derivePosition, domain);
+            return res.json(result);
+          }
+        } catch (e: any) {
           // eslint-disable-next-line no-console
           console.warn("preview: quick proxy fetch failed", e && (e.name || e.message));
         }
-
-        // fallback heuristics
-        return res.json({
-          company: deriveCompany(),
-          position: derivePosition(),
-          location: null,
-          job_description: null,
-          requirements: [],
-          skills: [],
-          salary: null,
-          employment_type: null,
-          source: parsedUrl.origin,
-          warning: "Heuristic preview — please verify and adjust any fields.",
-        });
+      } catch (e: any) {
+        // noop
       }
 
+      // Last-resort heuristic preview so UI isn't blocked
+      return res.json({
+        company: deriveCompany(),
+        position: derivePosition(),
+        location: null,
+        job_description: null,
+        requirements: [],
+        skills: [],
+        salary: null,
+        employment_type: null,
+        source: parsedUrl.origin,
+        warning: "Heuristic preview — please verify and adjust any fields.",
+      });
+    }
+
+    // Non-production: attempt full fetch (may use puppeteer-core + chromium)
+    try {
       const html = await fetchJobPageHtml(parsedUrl.toString());
       const details = extractJobDetailsFromHtml(html, parsedUrl.toString());
 
-      res.json({
+      return res.json({
         ...details,
         warning: !details.company && !details.position && !details.job_description
           ? "The job page blocked auto-fetching, but the link was saved. Please review and complete the remaining details manually."
           : undefined,
       });
-    } catch (error) {
+    } catch (error: any) {
       // eslint-disable-next-line no-console
-      console.error("Job URL preview failed:", error);
-      res.json({
+      console.error("Job URL preview failed:", error && (error.name || error.message));
+      return res.json({
         company: null,
         position: null,
         location: null,
@@ -262,9 +265,9 @@ export default async function handler(req: any, res: any) {
           "This job site blocks automated fetching, but the link was still saved. Please fill in the remaining details manually.",
       });
     }
-  } catch (err) {
+  } catch (err: any) {
     // eslint-disable-next-line no-console
-    console.error("applications/preview handler error:", err);
-    res.status(500).json({ error: "Internal error" });
+    console.error("applications/preview handler error:", err && (err.name || err.message));
+    return res.status(500).json({ error: "Internal error" });
   }
 }
