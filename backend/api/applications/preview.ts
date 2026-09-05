@@ -115,6 +115,26 @@ export default async function handler(req: any, res: any) {
     }
 
     try {
+      // In production/serverless the outbound fetch often fails or times out.
+      // For urgent demos, return a fast canned preview so the UI remains usable.
+      if (process.env.VERCEL || process.env.NODE_ENV === "production") {
+        // eslint-disable-next-line no-console
+        console.warn("preview: returning canned response in production to avoid 504");
+        return res.json({
+          company: null,
+          position: null,
+          location: null,
+          job_description: null,
+          requirements: [],
+          skills: [],
+          salary: null,
+          employment_type: null,
+          source: "Job posting link",
+          warning:
+            "Preview is disabled in this deployment to avoid timeouts. Please fill in details manually.",
+        });
+      }
+
       const html = await fetchJobPageHtml(parsedUrl.toString());
       const details = extractJobDetailsFromHtml(html, parsedUrl.toString());
 
