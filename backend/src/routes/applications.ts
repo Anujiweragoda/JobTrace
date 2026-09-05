@@ -106,12 +106,23 @@ async function fetchJobPageHtml(url: string): Promise<string> {
 
   // Try a headless browser fetch as a fallback for sites that require JS or block simple fetches.
   try {
-    // Dynamically import puppeteer so it's optional.
-    // To enable this fallback install puppeteer: `npm install puppeteer` in backend/
-    // If not installed, this will throw and we'll fall back to the standard error.
+    // Dynamically import puppeteer-core + @sparticuz/chromium for production.
     // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const puppeteer = require("puppeteer");
-    const browser = await puppeteer.launch({ args: ["--no-sandbox", "--disable-setuid-sandbox"] });
+    const puppeteer = require("puppeteer-core");
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const chromium = require("@sparticuz/chromium");
+
+    const launchOptions: any = {
+      args: ["--no-sandbox", "--disable-setuid-sandbox", ...(chromium.args || [])],
+      headless: chromium.headless ?? true,
+      defaultViewport: { width: 1280, height: 800 },
+    };
+
+    if (process.env.VERCEL || process.env.NODE_ENV === "production") {
+      launchOptions.executablePath = chromium.executablePath();
+    }
+
+    const browser = await puppeteer.launch(launchOptions);
     try {
       const page = await browser.newPage();
       await page.setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36");
@@ -138,7 +149,7 @@ async function fetchJobPageHtml(url: string): Promise<string> {
       } catch {}
     }
   } catch (e) {
-    // puppeteer not available or failed — fall through to error below
+    // puppeteer-core/chromium not available or failed — fall through to error below
   }
 
   throw new Error("The job page is blocking automated fetches, so its details could not be parsed automatically. To enable a stronger fallback try installing Puppeteer in backend/ (npm install puppeteer) or use the manual entry form.");

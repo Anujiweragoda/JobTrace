@@ -35,20 +35,27 @@ async function fetchJobPageHtml(url: string): Promise<string> {
     }
   }
 
-  try {
-    // In serverless production environments (Vercel), Puppeteer cold-starts and
-    // binary availability often cause long delays or function failures. Skip
-    // the Puppeteer fallback in production to avoid function invocation timeouts.
+    try {
+    // Use puppeteer-core + @sparticuz/chromium in production/serverless to
+    // reliably launch a compatible Chromium binary on Vercel. In local dev
+    // fallback to a locally installed Chrome/Chromium via puppeteer-core default.
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const puppeteer = require("puppeteer-core");
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const chromium = require("@sparticuz/chromium");
+
+    const launchOptions: any = {
+      args: ["--no-sandbox", "--disable-setuid-sandbox", ...(chromium.args || [])],
+      headless: chromium.headless ?? true,
+      defaultViewport: { width: 1280, height: 800 },
+    };
+
     if (process.env.VERCEL || process.env.NODE_ENV === "production") {
-      // eslint-disable-next-line no-console
-      console.warn("preview: skipping puppeteer fallback in production/serverless");
-      throw new Error("skip-puppeteer");
+      // Use chromium.executablePath() in production
+      launchOptions.executablePath = chromium.executablePath();
     }
 
-    // optional puppeteer fallback for local/dev where it's available
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const puppeteer = require("puppeteer");
-    const browser = await puppeteer.launch({ args: ["--no-sandbox", "--disable-setuid-sandbox"] });
+    const browser = await puppeteer.launch(launchOptions);
     try {
       const page = await browser.newPage();
       await page.setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36");
@@ -74,7 +81,7 @@ async function fetchJobPageHtml(url: string): Promise<string> {
       } catch {}
     }
   } catch (e) {
-    // puppeteer not available, skipped, or failed
+    // puppeteer-core/chromium failed — fall through to error
   }
 
   throw new Error("The job page is blocking automated fetches, so its details could not be parsed automatically.");
@@ -118,12 +125,11 @@ export default async function handler(req: any, res: any) {
       // In production/serverless the outbound fetch often fails or times out.
       // For urgent demos, return a fast canned preview so the UI remains usable.
       if (process.env.VERCEL || process.env.NODE_ENV === "production") {
-        // Production-safe quick heuristic preview:
-        // 1) Try a fast proxy fetch (r.jina.ai) with a short timeout to get HTML title/description.
-        // 2) If that fails, derive company/position heuristically from the URL.
-        // This avoids long network/Puppeteer cold-starts while giving useful autofill values for demos.
+        // In production/serverless, attempt real scraping with puppeteer-core + chromium
+        // (handled above) or via ScrapingBee if configured. The heuristic fallback
+        // below only runs if scraping fails.
         // eslint-disable-next-line no-console
-        console.log("preview: running production heuristic preview");
+        console.log("preview: production mode — attempting scraping/scrapingBee");
         const hostname = parsedUrl.hostname.replace(/^www\./, "");
         const domain = hostname.split(".")[0] || hostname;
         const deriveCompany = () => {
