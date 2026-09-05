@@ -140,13 +140,18 @@ export default async function handler(req: any, res: any) {
 
         // attempt fast proxy fetch
         try {
-          const proxy = `https://r.jina.ai/http://${parsedUrl.host}${parsedUrl.pathname}${parsedUrl.search}`;
-          const controller = new AbortController();
-          const timeout = setTimeout(() => controller.abort(), 3000);
-          const r = await fetch(proxy, { signal: controller.signal, headers: { Accept: "text/html" } });
-          clearTimeout(timeout);
-          if (r.ok) {
-            const html = await r.text();
+          // If a paid scraping service key is provided, prefer it (more reliable).
+          const scrapingBeeKey = process.env.SCRAPINGBEE_KEY;
+          if (scrapingBeeKey) {
+            const apiUrl = `https://app.scrapingbee.com/api/v1?api_key=${encodeURIComponent(
+              scrapingBeeKey
+            )}&url=${encodeURIComponent(parsedUrl.toString())}&render_js=false`;
+            const controller = new AbortController();
+            const timeout = setTimeout(() => controller.abort(), 5000);
+            const r = await fetch(apiUrl, { signal: controller.signal, headers: { Accept: "text/html" } });
+            clearTimeout(timeout);
+            if (r.ok) {
+              const html = await r.text();
             // extract title and meta description if present
             const titleMatch = html.match(/<title[^>]*>([^<]+)<\/title>/i);
             const descMatch = html.match(/<meta[^>]+name=["']description["'][^>]*content=["']([^"']+)["'][^>]*>/i) || html.match(/<meta[^>]+property=["']og:description["'][^>]*content=["']([^"']+)["'][^>]*>/i);
@@ -193,7 +198,17 @@ export default async function handler(req: any, res: any) {
               source: parsedUrl.origin,
               warning: "Heuristic preview — please verify and adjust any fields.",
             });
+            }
           }
+
+          // fallback to public proxy
+          const proxy = `https://r.jina.ai/http://${parsedUrl.host}${parsedUrl.pathname}${parsedUrl.search}`;
+          const controller = new AbortController();
+          const timeout = setTimeout(() => controller.abort(), 3000);
+          const r = await fetch(proxy, { signal: controller.signal, headers: { Accept: "text/html" } });
+          clearTimeout(timeout);
+          if (r.ok) {
+            const html = await r.text();
         } catch (e) {
           // ignore and fall back to heuristics
           // eslint-disable-next-line no-console
