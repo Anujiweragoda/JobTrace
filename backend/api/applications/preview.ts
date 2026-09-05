@@ -118,20 +118,100 @@ export default async function handler(req: any, res: any) {
       // In production/serverless the outbound fetch often fails or times out.
       // For urgent demos, return a fast canned preview so the UI remains usable.
       if (process.env.VERCEL || process.env.NODE_ENV === "production") {
+        // Production-safe quick heuristic preview:
+        // 1) Try a fast proxy fetch (r.jina.ai) with a short timeout to get HTML title/description.
+        // 2) If that fails, derive company/position heuristically from the URL.
+        // This avoids long network/Puppeteer cold-starts while giving useful autofill values for demos.
         // eslint-disable-next-line no-console
-        console.warn("preview: returning canned response in production to avoid 504");
+        console.log("preview: running production heuristic preview");
+        const hostname = parsedUrl.hostname.replace(/^www\./, "");
+        const domain = hostname.split(".")[0] || hostname;
+        const deriveCompany = () => {
+          // Try to get a nicer company name from the host
+          return domain.replace(/[-_]+/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+        };
+        const derivePosition = () => {
+          // Use path segments as a fallback position
+          const parts = parsedUrl.pathname.split("/").filter(Boolean);
+          if (parts.length === 0) return "Job application";
+          const last = parts[parts.length - 1].replace(/[-_]+/g, " ");
+          return last.replace(/\b\w/g, (c) => c.toUpperCase());
+        };
+
+        // attempt fast proxy fetch
+        try {
+          const proxy = `https://r.jina.ai/http://${parsedUrl.host}${parsedUrl.pathname}${parsedUrl.search}`;
+          const controller = new AbortController();
+          const timeout = setTimeout(() => controller.abort(), 3000);
+          const r = await fetch(proxy, { signal: controller.signal, headers: { Accept: "text/html" } });
+          clearTimeout(timeout);
+          if (r.ok) {
+            const html = await r.text();
+            // extract title and meta description if present
+            const titleMatch = html.match(/<title[^>]*>([^<]+)<\/title>/i);
+            const descMatch = html.match(/<meta[^>]+name=["']description["'][^>]*content=["']([^"']+)["'][^>]*>/i) || html.match(/<meta[^>]+property=["']og:description["'][^>]*content=["']([^"']+)["'][^>]*>/i);
+            const title = titleMatch ? titleMatch[1].trim() : null;
+            const desc = descMatch ? descMatch[1].trim() : null;
+            let company = deriveCompany();
+            let position = derivePosition();
+            if (title) {
+              // If title contains separators, try to split into position/company
+              const sep = title.includes(" - ") ? " - " : title.includes(" | ") ? " | " : null;
+              if (sep) {
+                const [a, b] = title.split(sep).map((s) => s.trim());
+                // pick which looks like company (contains domain words)
+                if (b && b.toLowerCase().includes(domain)) {
+                  company = a;
+                  position = b;
+                } else if (a && a.toLowerCase().includes(domain)) {
+                  company = a;
+                  position = b || position;
+                } else {
+                  // heuristics: longer segment -> position
+                  if (a && b) {
+                    position = a.length >= b.length ? a : b;
+                    company = a.length >= b.length ? b : a;
+                  } else {
+                    position = a || position;
+                  }
+                }
+              } else {
+                // no separator — treat title as position if it's not the domain
+                if (!title.toLowerCase().includes(domain)) position = title;
+              }
+            }
+
+            return res.json({
+              company: company || null,
+              position: position || null,
+              location: null,
+              job_description: desc || title || null,
+              requirements: [],
+              skills: [],
+              salary: null,
+              employment_type: null,
+              source: parsedUrl.origin,
+              warning: "Heuristic preview — please verify and adjust any fields.",
+            });
+          }
+        } catch (e) {
+          // ignore and fall back to heuristics
+          // eslint-disable-next-line no-console
+          console.warn("preview: quick proxy fetch failed", e && (e.name || e.message));
+        }
+
+        // fallback heuristics
         return res.json({
-          company: null,
-          position: null,
+          company: deriveCompany(),
+          position: derivePosition(),
           location: null,
           job_description: null,
           requirements: [],
           skills: [],
           salary: null,
           employment_type: null,
-          source: "Job posting link",
-          warning:
-            "Preview is disabled in this deployment to avoid timeouts. Please fill in details manually.",
+          source: parsedUrl.origin,
+          warning: "Heuristic preview — please verify and adjust any fields.",
         });
       }
 
