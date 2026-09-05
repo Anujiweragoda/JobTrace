@@ -166,82 +166,67 @@ export default async function handler(req: any, res: any) {
       return res.status(400).json({ error: "The job URL is not valid." });
     }
 
-    // Production: try ScrapingBee -> proxy -> heuristic
-    if (process.env.VERCEL || process.env.NODE_ENV === "production") {
-      // eslint-disable-next-line no-console
-      console.log("preview: production mode — attempting scraping/scrapingBee");
-      const hostname = parsedUrl.hostname.replace(/^www\./, "");
-      const domain = hostname.split(".")[0] || hostname;
-      const deriveCompany = () => domain.replace(/[-_]+/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
-      const derivePosition = () => {
-        const parts = parsedUrl.pathname.split("/").filter(Boolean);
-        if (parts.length === 0) return "Job application";
-        const last = parts[parts.length - 1].replace(/[-_]+/g, " ");
-        return last.replace(/\b\w/g, (c) => c.toUpperCase());
-      };
+    // Unified flow: prefer ScrapingBee (if key present), then proxy, then headless browser, then heuristic.
+    // Prepare derived helpers
+    // eslint-disable-next-line no-console
+    console.log("preview: starting unified scraping flow");
+    const hostname = parsedUrl.hostname.replace(/^www\./, "");
+    const domain = hostname.split(".")[0] || hostname;
+    const deriveCompany = () => domain.replace(/[-_]+/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+    const derivePosition = () => {
+      const parts = parsedUrl.pathname.split("/").filter(Boolean);
+      if (parts.length === 0) return "Job application";
+      const last = parts[parts.length - 1].replace(/[-_]+/g, " ");
+      return last.replace(/\b\w/g, (c) => c.toUpperCase());
+    };
 
+    // 1) ScrapingBee (if config present)
+    const scrapingBeeKey = process.env.SCRAPINGBEE_KEY;
+    if (scrapingBeeKey) {
       try {
-        const scrapingBeeKey = process.env.SCRAPINGBEE_KEY;
-        if (scrapingBeeKey) {
-          const apiUrl = `https://app.scrapingbee.com/api/v1?api_key=${encodeURIComponent(
-            scrapingBeeKey
-          )}&url=${encodeURIComponent(parsedUrl.toString())}&render_js=false`;
-          try {
-            const controller = new AbortController();
-            const timeout = setTimeout(() => controller.abort(), 5000);
-            const r = await fetch(apiUrl, { signal: controller.signal, headers: { Accept: "text/html" } });
-            clearTimeout(timeout);
-            if (r.ok) {
-              const html = await r.text();
-              const result = buildPreviewFromHtml(html, parsedUrl, deriveCompany, derivePosition, domain);
-              return res.json(result);
-            }
-          } catch (e: any) {
-            // eslint-disable-next-line no-console
-            console.warn("preview: scrapingBee fetch failed", e && (e.name || e.message));
-          }
-        }
-
-        // fallback to public proxy
-        try {
-          const proxy = `https://r.jina.ai/http://${parsedUrl.host}${parsedUrl.pathname}${parsedUrl.search}`;
-          const controller = new AbortController();
-          const timeout = setTimeout(() => controller.abort(), 3000);
-          const r = await fetch(proxy, { signal: controller.signal, headers: { Accept: "text/html" } });
-          clearTimeout(timeout);
-          if (r.ok) {
-            const html = await r.text();
-            const result = buildPreviewFromHtml(html, parsedUrl, deriveCompany, derivePosition, domain);
-            return res.json(result);
-          }
-        } catch (e: any) {
+        const apiUrl = `https://app.scrapingbee.com/api/v1?api_key=${encodeURIComponent(scrapingBeeKey)}&url=${encodeURIComponent(parsedUrl.toString())}&render_js=false`;
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 7000);
+        const r = await fetch(apiUrl, { signal: controller.signal, headers: { Accept: "text/html" } });
+        clearTimeout(timeout);
+        if (r.ok) {
+          const html = await r.text();
+          const result = buildPreviewFromHtml(html, parsedUrl, deriveCompany, derivePosition, domain);
           // eslint-disable-next-line no-console
-          console.warn("preview: quick proxy fetch failed", e && (e.name || e.message));
+          console.log("preview: returning via ScrapingBee");
+          return res.json(result);
         }
       } catch (e: any) {
-        // noop
+        // eslint-disable-next-line no-console
+        console.warn("preview: scrapingBee fetch failed", e && (e.name || e.message));
       }
-
-      // Last-resort heuristic preview so UI isn't blocked
-      return res.json({
-        company: deriveCompany(),
-        position: derivePosition(),
-        location: null,
-        job_description: null,
-        requirements: [],
-        skills: [],
-        salary: null,
-        employment_type: null,
-        source: parsedUrl.origin,
-        warning: "Heuristic preview — please verify and adjust any fields.",
-      });
     }
 
-    // Non-production: attempt full fetch (may use puppeteer-core + chromium)
+    // 2) Public proxy fallback
+    try {
+      const proxy = `https://r.jina.ai/http://${parsedUrl.host}${parsedUrl.pathname}${parsedUrl.search}`;
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 4000);
+      const r = await fetch(proxy, { signal: controller.signal, headers: { Accept: "text/html" } });
+      clearTimeout(timeout);
+      if (r.ok) {
+        const html = await r.text();
+        const result = buildPreviewFromHtml(html, parsedUrl, deriveCompany, derivePosition, domain);
+        // eslint-disable-next-line no-console
+        console.log("preview: returning via public proxy");
+        return res.json(result);
+      }
+    } catch (e: any) {
+      // eslint-disable-next-line no-console
+      console.warn("preview: quick proxy fetch failed", e && (e.name || e.message));
+    }
+
+    // 3) Headless browser (puppeteer-core + chromium when available)
     try {
       const html = await fetchJobPageHtml(parsedUrl.toString());
       const details = extractJobDetailsFromHtml(html, parsedUrl.toString());
-
+      // eslint-disable-next-line no-console
+      console.log("preview: returning via headless browser");
       return res.json({
         ...details,
         warning: !details.company && !details.position && !details.job_description
@@ -250,21 +235,24 @@ export default async function handler(req: any, res: any) {
       });
     } catch (error: any) {
       // eslint-disable-next-line no-console
-      console.error("Job URL preview failed:", error && (error.name || error.message));
-      return res.json({
-        company: null,
-        position: null,
-        location: null,
-        job_description: null,
-        requirements: [],
-        skills: [],
-        salary: null,
-        employment_type: null,
-        source: "Job posting link",
-        warning:
-          "This job site blocks automated fetching, but the link was still saved. Please fill in the remaining details manually.",
-      });
+      console.error("Job URL headless fetch failed:", error && (error.name || error.message));
     }
+
+    // 4) Last-resort heuristic preview so UI isn't blocked
+    // eslint-disable-next-line no-console
+    console.log("preview: returning heuristic fallback");
+    return res.json({
+      company: deriveCompany(),
+      position: derivePosition(),
+      location: null,
+      job_description: null,
+      requirements: [],
+      skills: [],
+      salary: null,
+      employment_type: null,
+      source: parsedUrl.origin,
+      warning: "Heuristic preview — please verify and adjust any fields.",
+    });
   } catch (err: any) {
     // eslint-disable-next-line no-console
     console.error("applications/preview handler error:", err && (err.name || err.message));
