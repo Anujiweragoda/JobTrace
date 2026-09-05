@@ -11,6 +11,7 @@
     { "src": "/api/auth/signup", "dest": "/api/auth/signup.ts" },
     { "src": "/api/auth/me", "dest": "/api/auth/me.ts" },
     { "src": "/api/auth/google", "dest": "/api/auth/google.ts" },
+    { "src": "/api/applications/preview", "dest": "/api/applications/preview.ts" },
     
     { "src": "/(.*)", "dest": "/api/index.ts" }
   ]
