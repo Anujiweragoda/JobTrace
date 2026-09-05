@@ -1,4 +1,5 @@
 import { PrismaClient } from "@prisma/client";
+import config from "../prisma/prisma.config";
 
 let _prisma: PrismaClient | null = null;
 
@@ -6,7 +7,11 @@ function initPrisma() {
 	if (!_prisma) {
 		// eslint-disable-next-line no-console
 		console.log("Prisma lazy init: creating client");
-		_prisma = new PrismaClient();
+		const options: any = {};
+		if (config && config.adapter) {
+			options.adapter = config.adapter;
+		}
+		_prisma = new PrismaClient(options);
 
 		// Note: Do NOT call $connect() here in serverless environments —
 		// opening persistent DB connections can keep the process alive and
