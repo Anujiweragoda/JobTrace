@@ -35,6 +35,27 @@ export default async function handler(req: any, res: any) {
 				return res.status(200).json([]);
 			}
 		}
+
+		// For production/demo: short-circuit POST /api/applications/preview to avoid
+		// lazy-importing the app and any DB/network calls that may cause 504s.
+		if (method === "POST" && typeof url === "string" && url.startsWith("/api/applications/preview")) {
+			// eslint-disable-next-line no-console
+			console.warn("serverless handler: short-circuiting POST /api/applications/preview in entry shim");
+			res.setHeader("Access-Control-Allow-Origin", req.headers?.origin || "*");
+			res.setHeader("Access-Control-Allow-Credentials", "true");
+			return res.status(200).json({
+				company: null,
+				position: null,
+				location: null,
+				job_description: null,
+				requirements: [],
+				skills: [],
+				salary: null,
+				employment_type: null,
+				source: "Job posting link",
+				warning: "Preview is disabled in this deployment to avoid timeouts. Please fill in details manually.",
+			});
+		}
 	} catch (e) {
 		// ignore and fall through to normal handler
 	}
