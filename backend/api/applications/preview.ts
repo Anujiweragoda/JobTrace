@@ -202,6 +202,43 @@ export default async function handler(req: any, res: any) {
       }
     }
 
+    // 1b) Scrape.do support (if config present)
+    const scrapeDoKey = process.env.SCRAPE_DO_KEY || process.env.SCRAPE_DO_TOKEN || process.env.SCRAPE_DO_API_KEY;
+    if (scrapeDoKey) {
+      try {
+        const candidates = [
+          `https://scrape.do/api?token=${encodeURIComponent(scrapeDoKey)}&url=${encodeURIComponent(parsedUrl.toString())}`,
+          `https://api.scrape.do?token=${encodeURIComponent(scrapeDoKey)}&url=${encodeURIComponent(parsedUrl.toString())}`,
+          `https://scrape.do?token=${encodeURIComponent(scrapeDoKey)}&url=${encodeURIComponent(parsedUrl.toString())}`,
+        ];
+
+        for (const apiUrl of candidates) {
+          try {
+            // eslint-disable-next-line no-console
+            console.log("preview: trying Scrape.do candidate", apiUrl);
+            const controller = new AbortController();
+            const timeout = setTimeout(() => controller.abort(), 7000);
+            const r = await fetch(apiUrl, { signal: controller.signal, headers: { Accept: "text/html" } });
+            clearTimeout(timeout);
+            if (r.ok) {
+              const html = await r.text();
+              const result = buildPreviewFromHtml(html, parsedUrl, deriveCompany, derivePosition, domain);
+              // eslint-disable-next-line no-console
+              console.log("preview: returning via Scrape.do", apiUrl);
+              return res.json(result);
+            }
+          } catch (e: any) {
+            // eslint-disable-next-line no-console
+            console.warn("preview: scrape.do candidate failed", apiUrl, e && (e.name || e.message));
+            continue;
+          }
+        }
+      } catch (e: any) {
+        // eslint-disable-next-line no-console
+        console.warn("preview: scrape.do fetch failed", e && (e.name || e.message));
+      }
+    }
+
     // 2) Public proxy fallback
     try {
       const proxy = `https://r.jina.ai/http://${parsedUrl.host}${parsedUrl.pathname}${parsedUrl.search}`;
