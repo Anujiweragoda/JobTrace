@@ -52,14 +52,24 @@ router.get("/", async (req, res) => {
     SELECT status, COUNT(*) as count FROM applications WHERE user_id = ${userId} GROUP BY status
   `;
 
+  const toJsonRows = (rows: unknown[]) => rows.map((row) => {
+    const value = row as Record<string, unknown>;
+    return Object.fromEntries(
+      Object.entries(value).map(([key, entry]) => [
+        key,
+        typeof entry === "bigint" ? Number(entry) : entry,
+      ]),
+    );
+  });
+
   res.json({
     totalApplications: totalApplicationsCount,
     interviews: interviewCountDistinct.length,
     offers: offersCount,
     responseRate,
-    bySource,
-    byEmploymentType,
-    byStatus,
+    bySource: toJsonRows(bySource as unknown[]),
+    byEmploymentType: toJsonRows(byEmploymentType as unknown[]),
+    byStatus: toJsonRows(byStatus as unknown[]),
   });
 });
 
