@@ -7,11 +7,11 @@ function initPrisma() {
 	if (!_prisma) {
 		// eslint-disable-next-line no-console
 		console.log("Prisma lazy init: creating client");
-		const options: any = {};
-		if (config && config.adapter) {
-			options.adapter = config.adapter;
-		}
-		_prisma = new PrismaClient(options);
+		// Do not pass an "adapter" option here unless the Prisma "driverAdapters"
+		// preview feature is explicitly enabled. Prefer reading the
+		// DATABASE_URL from the environment so Prisma can be constructed
+		// normally in all environments (including Vercel serverless).
+		_prisma = new PrismaClient();
 
 		// Note: Do NOT call $connect() here in serverless environments —
 		// opening persistent DB connections can keep the process alive and
