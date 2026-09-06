@@ -52,10 +52,13 @@ export default function LoginPage({ onLogin, onGoogleLogin, onSignup, loading = 
     if (!GOOGLE_CLIENT_ID) return;
 
     const scriptUrl = "https://accounts.google.com/gsi/client?hl=en";
+    let cancelled = false;
     let script = document.getElementById("google-gsi-script") as HTMLScriptElement | null;
 
     const initialize = () => {
-      window.google?.accounts?.id?.initialize({
+      if (cancelled || !window.google?.accounts?.id) return;
+
+      window.google.accounts.id.initialize({
         client_id: GOOGLE_CLIENT_ID,
         callback: async (response) => {
           await onGoogleLogin(response.credential);
@@ -64,7 +67,8 @@ export default function LoginPage({ onLogin, onGoogleLogin, onSignup, loading = 
 
       const btnContainer = document.getElementById("google-signin-button");
       if (btnContainer) {
-        window.google?.accounts?.id?.renderButton(btnContainer, {
+        btnContainer.replaceChildren();
+        window.google.accounts.id.renderButton(btnContainer, {
           theme: "outline",
           size: "large",
           width: "100%",
@@ -80,19 +84,24 @@ export default function LoginPage({ onLogin, onGoogleLogin, onSignup, loading = 
       script = null;
     }
 
-    if (script) {
+    if (window.google?.accounts?.id) {
       initialize();
-      return;
+    } else if (script) {
+      script.addEventListener("load", initialize, { once: true });
+    } else {
+      script = document.createElement("script");
+      script.id = "google-gsi-script";
+      script.src = scriptUrl;
+      script.async = true;
+      script.defer = true;
+      script.addEventListener("load", initialize, { once: true });
+      document.head.appendChild(script);
     }
 
-    const googleScript = document.createElement("script");
-    googleScript.id = "google-gsi-script";
-    googleScript.src = scriptUrl;
-    googleScript.async = true;
-    googleScript.defer = true;
-    googleScript.onload = initialize;
-    document.body.appendChild(googleScript);
-  }, [onGoogleLogin, GOOGLE_CLIENT_ID]);
+    return () => {
+      cancelled = true;
+    };
+  }, [onGoogleLogin]);
 
   return (
     <div className="auth-screen">
