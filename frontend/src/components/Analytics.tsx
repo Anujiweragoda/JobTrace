@@ -35,12 +35,48 @@ function BarList({
 
 export default function Analytics() {
   const [data, setData] = useState<AnalyticsData | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
 
   useEffect(() => {
-    api.getAnalytics().then(setData);
+    let active = true;
+    setLoading(true);
+    setError("");
+
+    api.getAnalytics()
+      .then((result) => {
+        if (active) setData(result);
+      })
+      .catch((err) => {
+        if (active) {
+          setError(err instanceof Error ? err.message : "Unable to load analytics.");
+        }
+      })
+      .finally(() => {
+        if (active) setLoading(false);
+      });
+
+    return () => {
+      active = false;
+    };
   }, []);
 
-  if (!data) return null;
+  if (loading) {
+    return <p style={{ color: "var(--ink-muted)" }}>Loading analytics…</p>;
+  }
+
+  if (error) {
+    return (
+      <div className="panel">
+        <h3>Analytics unavailable</h3>
+        <p style={{ color: "var(--ink-muted)" }}>{error}</p>
+      </div>
+    );
+  }
+
+  if (!data) {
+    return <p style={{ color: "var(--ink-muted)" }}>No analytics data yet.</p>;
+  }
 
   return (
     <div>
