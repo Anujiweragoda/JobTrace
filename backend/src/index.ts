@@ -11,7 +11,16 @@ import { requireAuth } from "./auth";
 const app = express();
 const PORT = process.env.PORT ? Number(process.env.PORT) : 4001;
 
-app.use(cors());
+app.use(cors({
+  origin: true,
+  credentials: true,
+  methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization"],
+}));
+app.use((req, res, next) => {
+  if (req.method === "OPTIONS") return res.status(204).end();
+  next();
+});
 app.use(express.json({ limit: "2mb" }));
 
 app.use("/api/auth", authRouter);
