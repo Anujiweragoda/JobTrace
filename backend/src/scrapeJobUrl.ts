@@ -129,12 +129,30 @@ const pickTextFromSelectors = (html: string, selectors: string[]) => {
 
 const parseTitle = (html: string, url: string) => {
   const explicit = cleanText(html.match(/<title>([\s\S]*?)<\/title>/i)?.[1]);
-  if (explicit) return explicit;
+  let title = explicit || cleanText(html.match(/<meta[^>]+name=["']og:title["'][^>]*content=["']([^"']+)["'][^>]*>/i)?.[1]) || "";
+  if (!title) {
+    title = url.split(/[/?#]/).filter(Boolean).slice(-1)[0]?.replace(/[-_]+/g, " ") ?? "";
+  }
 
-  const canonical = cleanText(html.match(/<meta[^>]+name=["']og:title["'][^>]*content=["']([^"']+)["'][^>]*>/i)?.[1]);
-  if (canonical) return canonical;
+  // strip common site suffixes often appended by job sites (e.g. "| LinkedIn Jobs")
+  try {
+    const urlHost = new URL(url).hostname.replace(/^www\./, "");
+    const parts = title.split("|").map((p) => p.trim());
+    if (parts.length > 1) {
+      const last = parts[parts.length - 1] || "";
+      if (/linkedin|indeed|glassdoor|jobs|career|jobboard|jobber|welcome/i.test(last) || last.toLowerCase().includes(urlHost)) {
+        parts.pop();
+        title = parts.join(" | ");
+      }
+    }
+  } catch (e) {
+    // ignore malformed URL
+  }
 
-  return url.split(/[/?#]/).filter(Boolean).slice(-1)[0]?.replace(/[-_]+/g, " ") ?? "";
+  // remove trailing site tokens after dashes/em-dashes
+  title = title.replace(/\s+[–—-]\s*(?:LinkedIn|Indeed|Glassdoor|Jobs|Jobboard).*$/i, "");
+
+  return cleanText(title || "");
 };
 
 const parseLocation = (html: string) => {
@@ -268,24 +286,64 @@ const splitKeywords = (text: string) => {
 const findCompanyAndPosition = (title: string) => {
   if (!title) return { company: "", position: "" };
 
-  const atMatch = title.match(/^(.*?)\s+at\s+(.+)$/i);
-  if (atMatch) {
-    return {
-      company: cleanText(atMatch[2]),
-      position: cleanText(atMatch[1]),
-    };
+  // try patterns like "Position at Company — Location" or "Position - Core at Company"
+  const atPattern = title.match(/^(.*?)\s+at\s+([^\u2013\u2014\-|\|]+)(?:[\u2013\u2014\-|\|].*)?$/i);
+  if (atPattern) {
+    return { company: cleanText(atPattern[2]), position: cleanText(atPattern[1]) };
   }
 
-  const dashMatch = title.match(/^(.*?)[-–—](.+)$/);
+  // fallback: "Position - Company"
+  const dashMatch = title.match(/^(.*?)[\-–—]\s*(.+)$/);
   if (dashMatch) {
     const candidatePosition = cleanText(dashMatch[1]);
     const candidateCompany = cleanText(dashMatch[2]);
     if (candidatePosition && candidateCompany) {
+      // if company looks like a site token (LinkedIn Jobs) don't use it
+      if (/linkedin|jobs|indeed|glassdoor/i.test(candidateCompany)) {
+        return { company: "", position: cleanText(title) };
+      }
       return { company: candidateCompany, position: candidatePosition };
     }
   }
 
+  // last resort: attempt to split on em dash used for location: "Position — Company"
+  const emMatch = title.match(/^(.*?)\s+[\u2013\u2014]\s*(.+)$/);
+  if (emMatch) {
+    return { company: cleanText(emMatch[2]), position: cleanText(emMatch[1]) };
+  }
+
   return { company: "", position: cleanText(title) };
+};
+
+// extract lists following headings like "Requirements", "Qualifications", "Responsibilities", "Skills"
+const extractListsUnderHeadings = (html: string) => {
+  const headingPattern = /<(h1|h2|h3|h4|strong|b)[^>]*>([\s\S]{0,300}?)<\/\1>/gi;
+  const usefulHeadings = ['requirement', 'qualification', 'responsibil', "what you'll", 'what we', 'skill', 'experience', 'youll', 'you will'];
+  let m: RegExpExecArray | null;
+  while ((m = headingPattern.exec(html))) {
+    const hText = cleanText(m[2] || '');
+    if (!hText) continue;
+    const lowered = hText.toLowerCase();
+    if (usefulHeadings.some((k) => lowered.includes(k))) {
+      // look forward from match index for a UL/OL
+      const rest = html.slice(m.index + m[0].length, m.index + m[0].length + 4000);
+      const listMatch = rest.match(/<(ul|ol)[^>]*>([\s\S]*?)<\/(ul|ol)>/i);
+      if (listMatch && listMatch[2]) {
+        const items = Array.from(listMatch[2].matchAll(/<li[^>]*>([\s\S]*?)<\/li>/gi)).map(x => cleanText((x[1]||'').replace(/<[^>]+>/g, ' '))).filter(Boolean);
+        if (items.length >= 1) return items;
+      }
+    }
+  }
+
+  // fallback: pick the largest ul/ol in the page with at least 3 items
+  const allLists = Array.from(html.matchAll(/<(ul|ol)[^>]*>([\s\S]*?)<\/(ul|ol)>/gi));
+  let best: string[] = [];
+  for (const L of allLists) {
+    const inner = L[2] || '';
+    const items = Array.from(inner.matchAll(/<li[^>]*>([\s\S]*?)<\/li>/gi)).map(x => cleanText((x[1]||'').replace(/<[^>]+>/g, ' '))).filter(Boolean);
+    if (items.length > best.length && items.length >= 3) best = items;
+  }
+  return best;
 };
 
 export function extractJobDetailsFromHtml(html: string, url: string): ScrapedJobData {
@@ -372,8 +430,13 @@ export function extractJobDetailsFromHtml(html: string, url: string): ScrapedJob
   const requirementsText = pickTextFromSelectors(html, ["requirements", "responsibilities", "qualifications"]);
   const skillsText = pickTextFromSelectors(html, ["skills", "tech-stack", "experience"]);
 
+  // try to extract list-based requirements/skills (LinkedIn and many job sites use headings + UL)
+  const headingLists = extractListsUnderHeadings(html);
+  const listRequirements = (headingLists && headingLists.length) ? headingLists : [];
+
   const mergedSkills = [
     ...splitKeywords(skillsText),
+    ...splitKeywords(listRequirements.join(', ')),
     ...description
       .split(/\s+/)
       .filter((word) => /[A-Z]{2,}/.test(word) && word.length > 2)
@@ -389,7 +452,7 @@ export function extractJobDetailsFromHtml(html: string, url: string): ScrapedJob
     position: position || "Untitled role",
     location: normalizeLocation(location) || null,
     job_description: description || null,
-    requirements: requirementsText ? splitKeywords(requirementsText) : [],
+    requirements: (listRequirements.length > 0) ? listRequirements : (requirementsText ? splitKeywords(requirementsText) : []),
     skills: normalizedSkills,
     salary: null,
     employment_type: null,
