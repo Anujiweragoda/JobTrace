@@ -188,6 +188,20 @@ const parseDescription = (html: string) => {
   const text = pickTextFromSelectors(html, mainCandidates);
   if (text) return text;
 
+  // LinkedIn and its public proxy often return the sign-in shell before the
+  // actual posting text. Start at the posting introduction and discard the UI.
+  const linkedInText = cleanText(
+    html
+      .replace(/<script[\s\S]*?<\/script>/gi, " ")
+      .replace(/<style[\s\S]*?<\/style>/gi, " ")
+      .replace(/<[^>]+>/g, " ")
+  );
+  const postingStart = linkedInText.search(/This position is listed on behalf of|Our partner is looking for|About the job/i);
+  if (postingStart >= 0) {
+    const posting = linkedInText.slice(postingStart);
+    return cleanText(posting.split(/Report this job|People also viewed|Similar jobs|Sign in to access/i)[0]);
+  }
+
   // prefer meta description / og:description when available
   const metaDesc = getMetaContent(html, 'og:description') || getMetaContent(html, 'description');
   if (metaDesc) return cleanText(metaDesc);
@@ -357,6 +371,21 @@ const splitKeywords = (text: string) => {
   return unique.slice(0, 20);
 };
 
+const extractTechnologySkills = (text: string) => {
+  const technologies = [
+    "JavaScript", "TypeScript", "Java", "Python", "C#", "C++", "Go", "Rust", "Kotlin", "Swift",
+    "React", "Angular", "Vue", "Node.js", "Next.js", "NestJS", "Express", "Spring", " .NET",
+    "SQL", "PostgreSQL", "MySQL", "MongoDB", "Redis", "GraphQL", "REST", "Docker", "Kubernetes",
+    "AWS", "Azure", "GCP", "Terraform", "Kafka", "Spark", "Airflow", "Databricks", "Snowflake",
+    "TensorFlow", "PyTorch", "scikit-learn", "MLOps", "Git", "Linux",
+  ].map((skill) => skill.trim());
+  const lower = text.toLowerCase();
+  return technologies.filter((skill) => {
+    const escaped = skill.replace(/[.*+?^${}()|[\\]\\\\]/g, "\\\\$&");
+    return new RegExp(`(?<![a-z0-9])${escaped}(?![a-z0-9])`, "i").test(lower);
+  });
+};
+
 const findCompanyAndPosition = (title: string) => {
   if (!title) return { company: "", position: "" };
 
@@ -488,19 +517,7 @@ export function extractJobDetailsFromHtml(html: string, url: string): ScrapedJob
     const rawSkills = Array.isArray(jsonLd.skills) ? jsonLd.skills.join(', ') : (typeof jsonLd.skills === 'string' ? jsonLd.skills : (Array.isArray(jsonLd.keySkills) ? jsonLd.keySkills.join(', ') : (typeof jsonLd.keySkills === 'string' ? jsonLd.keySkills : '')));
     const skillsText = (rawSkills || '').replace(/<[^>]+>/g, ' ');
 
-    const descTokens = jDescription
-      .split(/\s+/)
-      .filter((word) => /[A-Z]{2,}/.test(word) && word.length > 2)
-      .map(normalizeSkillToken)
-      .filter(Boolean)
-      .slice(0, 10);
-
-    const merged = [
-      ...splitKeywords(skillsText || requirementsText),
-      ...descTokens,
-    ];
-
-    const normalizedSkills = dedupeCaseInsensitive(merged).slice(0, 12);
+    const normalizedSkills = extractTechnologySkills(`${skillsText} ${requirementsText} ${jDescription}`).slice(0, 12);
 
     return {
       company: jCompany || "Unknown company",
@@ -579,18 +596,9 @@ export function extractJobDetailsFromHtml(html: string, url: string): ScrapedJob
   const headingLists = extractListsUnderHeadings(html);
   const listRequirements = (headingLists && headingLists.length) ? headingLists : [];
 
-  const mergedSkills = [
-    ...splitKeywords(skillsText),
-    ...splitKeywords(listRequirements.join(', ')),
-    ...description
-      .split(/\s+/)
-      .filter((word) => /[A-Z]{2,}/.test(word) && word.length > 2)
-      .map(normalizeSkillToken)
-      .filter(Boolean)
-      .slice(0, 10),
-  ];
-
-  const normalizedSkills = dedupeCaseInsensitive(mergedSkills).slice(0, 12);
+  const normalizedSkills = extractTechnologySkills(
+    `${skillsText} ${listRequirements.join(" ")} ${description}`
+  ).slice(0, 12);
 
   return {
     company: company || "Unknown company",
