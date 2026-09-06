@@ -375,18 +375,35 @@ const findCompanyAndPosition = (title: string) => {
     }
   }
 
-  // fallback: "Position - Company"
+  // fallback: "Position - Company" or "Company - Position"
   const dashMatch = title.match(/^(.*?)[\-–—]\s*(.+)$/);
   if (dashMatch) {
-    const candidatePosition = cleanText(dashMatch[1]);
-    const candidateCompany = cleanText(dashMatch[2]);
-    if (candidatePosition && candidateCompany) {
-      // if company looks like a site token (LinkedIn Jobs) don't use it
-      if (/linkedin|jobs|indeed|glassdoor/i.test(candidateCompany)) {
-        return { company: "", position: cleanText(title) };
-      }
-      return { company: candidateCompany, position: candidatePosition };
+    let left = cleanText(dashMatch[1]);
+    let right = cleanText(dashMatch[2]);
+
+    const roleKeywords = /(engineer|developer|devops|manager|designer|consultant|analyst|fullstack|backend|frontend|senior|junior|lead|principal|staff|architect|scientist|specialist)/i;
+    const companyTokens = /(inc\.?|ltd\.?|llc\.?|gmbh|pvt\.?|solutions|technologies|systems|company|corp\.?|co\.?|group|services)/i;
+
+    const leftIsRole = roleKeywords.test(left);
+    const rightIsRole = roleKeywords.test(right);
+    const leftIsCompany = companyTokens.test(left) || /^[A-Z][a-z]+(?:\s+[A-Z][a-z]+){0,4}$/.test(left) && !leftIsRole;
+    const rightIsCompany = companyTokens.test(right) || /^[A-Z][a-z]+(?:\s+[A-Z][a-z]+){0,4}$/.test(right) && !rightIsRole;
+
+    // prefer obvious role/company detection
+    if (leftIsRole && rightIsCompany) return { company: right, position: left };
+    if (rightIsRole && leftIsCompany) return { company: left, position: right };
+
+    // if right looks like site tokens (LinkedIn Jobs) avoid using it as company
+    if (/linkedin|jobs|indeed|glassdoor/i.test(right)) {
+      return { company: "", position: cleanText(title) };
     }
+
+    // otherwise, prefer right as company if it contains company tokens
+    if (rightIsCompany) return { company: right, position: left };
+    if (leftIsCompany) return { company: left, position: right };
+
+    // otherwise fallback to original assumption: left=position, right=company
+    return { company: right, position: left };
   }
 
   // last resort: attempt to split on em dash used for location: "Position — Company"
