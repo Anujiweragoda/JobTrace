@@ -30,7 +30,22 @@ export default async function handler(req: any, res: any) {
   }
 
   try {
-    const ok = await validateCredentials(username, password);
+    // Protect against DB hangs by racing the credential check against a short timeout
+    const timeoutMs = 7000;
+    let ok: boolean;
+    try {
+      ok = await Promise.race([
+        validateCredentials(username, password),
+        new Promise<boolean>((_, reject) => setTimeout(() => reject(new Error("DB_TIMEOUT")), timeoutMs)),
+      ]);
+    } catch (err: any) {
+      if (err && err.message === "DB_TIMEOUT") {
+        return res.status(503).json({ error: "Database unavailable or timed out (please try again later)" });
+      }
+      // Other errors fall through to the outer catch
+      throw err;
+    }
+
     if (!ok) return res.status(401).json({ error: "Invalid username or password." });
 
     const token = createAuthToken(username);
