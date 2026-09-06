@@ -42,7 +42,10 @@ function buildPreviewFromHtml(html: string, parsedUrl: URL, deriveCompany: () =>
     salary: null,
     employment_type: null,
     source: parsedUrl.origin,
-    warning: "Heuristic preview — please verify and adjust any fields.",
+    warning:
+      !company && !position && !(desc || title)
+        ? "Heuristic preview — please verify and adjust any fields."
+        : undefined,
   };
 }
 
