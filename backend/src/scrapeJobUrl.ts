@@ -235,6 +235,27 @@ const parseJsonLdJobPosting = (html: string) => {
   return null;
 };
 
+const isLinkedInUrl = (url: string) => {
+  try {
+    return new URL(url).hostname.includes('linkedin.com');
+  } catch (e) {
+    return false;
+  }
+};
+
+const pickTextNearH1 = (html: string) => {
+  const h1Match = html.match(/<h1[^>]*>([\s\S]*?)<\/h1>/i);
+  if (!h1Match) return { h1: '', nearby: '' };
+  const h1Text = cleanText(h1Match[1].replace(/<[^>]+>/g, ' '));
+  // look for a company link within next 800 chars
+  const start = h1Match.index! + h1Match[0].length;
+  const rest = html.slice(start, start + 800);
+  const compLink = rest.match(/<a[^>]+href=["'][^"']*company[^"']*["'][^>]*>([\s\S]*?)<\/a>/i)?.[1];
+  const compSpan = rest.match(/<span[^>]*class=["'][^"']*(?:company|org|topcard__org-name|top-card__company)[^"']*["'][^>]*>([\s\S]*?)<\/span>/i)?.[1];
+  const company = cleanText((compLink || compSpan || '').replace(/<[^>]+>/g, ' '));
+  return { h1: h1Text, nearby: company };
+};
+
 const splitKeywords = (text: string) => {
   const words = text
     .split(/[\n,;|/]+/)
@@ -416,8 +437,24 @@ export function extractJobDetailsFromHtml(html: string, url: string): ScrapedJob
   }
 
   // fallback heuristics when JSON-LD unavailable
-  const company = normalizeCompany(siteName || titleCompany || pickTextFromSelectors(html, ["company", "employer", "organization"]));
-  const position = cleanText(titlePosition || pickTextFromSelectors(html, ["h1", "job-title", "position"]));
+  // LinkedIn-specific heuristics: prefer the <h1> as position and nearby company anchor/span
+  let company = normalizeCompany(siteName || titleCompany || pickTextFromSelectors(html, ["company", "employer", "organization"]));
+  let position = cleanText(titlePosition || pickTextFromSelectors(html, ["h1", "job-title", "position"]));
+
+  if (isLinkedInUrl(url)) {
+    const near = pickTextNearH1(html);
+    if (near.h1) {
+      position = position || near.h1;
+    }
+    if (near.nearby) {
+      company = company || normalizeCompany(near.nearby);
+    }
+    // also try list-based extraction for LinkedIn
+    const linkedLists = extractListsUnderHeadings(html);
+    if (linkedLists && linkedLists.length) {
+      // prefer first list as requirements
+    }
+  }
 
   const location = cleanText(
     parseLocation(html) ||
