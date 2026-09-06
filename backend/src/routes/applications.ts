@@ -84,75 +84,28 @@ router.get("/", async (req, res) => {
 });
 
 async function fetchJobPageHtml(url: string): Promise<string> {
-  const candidates = [url, `https://r.jina.ai/http://${url}`];
+  const headers = {
+    "User-Agent": "Mozilla/5.0 (compatible; JobTrace/1.0)",
+    Accept: "text/html,application/xhtml+xml,application/json;q=0.9,*/*;q=0.8",
+  };
+  const targets = process.env.SCRAPE_DO_KEY
+    ? [`https://api.scrape.do/?token=${encodeURIComponent(process.env.SCRAPE_DO_KEY)}&url=${encodeURIComponent(url)}`, url]
+    : [url];
 
-  for (const candidate of candidates) {
+  let lastStatus = 0;
+  for (const target of targets) {
     try {
-      const response = await fetch(candidate, {
-        headers: {
-          "User-Agent": "Mozilla/5.0 (compatible; JobTracker/1.0; +https://localhost)",
-          Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-        },
-      });
-
+      const response = await fetch(target, { headers, signal: AbortSignal.timeout(25000) });
+      lastStatus = response.status;
       if (!response.ok) continue;
-
       const html = await response.text();
-      if (html && html.trim()) return html;
+      if (html.trim().length > 200) return html;
     } catch {
-      continue;
+      // Try the next provider without exposing provider credentials or page content.
     }
   }
 
-  // Try a headless browser fetch as a fallback for sites that require JS or block simple fetches.
-  try {
-    // Dynamically import puppeteer-core + @sparticuz/chromium for production.
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const puppeteer = require("puppeteer-core");
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const chromium = require("@sparticuz/chromium");
-
-    const launchOptions: any = {
-      args: ["--no-sandbox", "--disable-setuid-sandbox", ...(chromium.args || [])],
-      headless: chromium.headless ?? true,
-      defaultViewport: { width: 1280, height: 800 },
-    };
-
-    if (process.env.VERCEL || process.env.NODE_ENV === "production") {
-      launchOptions.executablePath = chromium.executablePath();
-    }
-
-    const browser = await puppeteer.launch(launchOptions);
-    try {
-      const page = await browser.newPage();
-      await page.setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36");
-      await page.setExtraHTTPHeaders({ Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8" });
-      const tryTargets = [url, `http://${url.replace(/^https?:\/\//, "")}`];
-      for (const t of tryTargets) {
-        try {
-          await page.goto(t, { waitUntil: "networkidle2", timeout: 20000 });
-          const content = await page.content();
-          if (content && content.trim()) {
-            await page.close();
-            await browser.close();
-            return content;
-          }
-        } catch (e) {
-          // try next
-          continue;
-        }
-      }
-      await browser.close();
-    } catch (e) {
-      try {
-        await browser.close();
-      } catch {}
-    }
-  } catch (e) {
-    // puppeteer-core/chromium not available or failed — fall through to error below
-  }
-
-  throw new Error("The job page is blocking automated fetches, so its details could not be parsed automatically. To enable a stronger fallback try installing Puppeteer in backend/ (npm install puppeteer) or use the manual entry form.");
+  throw new Error(lastStatus ? `Job page fetch failed with status ${lastStatus}.` : "Job page could not be fetched.");
 }
 
 // POST /api/applications/preview
@@ -181,19 +134,11 @@ router.post("/preview", async (req, res) => {
         : undefined,
     });
   } catch (error) {
-    console.error("Job URL preview failed:", error);
-    res.json({
-      company: null,
-      position: null,
-      location: null,
-      job_description: null,
-      requirements: [],
-      skills: [],
-      salary: null,
-      employment_type: null,
+    const message = error instanceof Error ? error.message : "Job page could not be fetched.";
+    return res.status(502).json({
+      error: message,
       source: "Job posting link",
-      warning:
-        "This job site blocks automated fetching, but the link was still saved. Please fill in the remaining details manually.",
+      warning: "The link could not be fetched automatically. You can still save it and complete the fields manually.",
     });
   }
 });
@@ -340,7 +285,7 @@ router.put("/:id", async (req, res) => {
       requirements: b.requirements !== undefined ? fromJsonArray(b.requirements) : (existing.requirements as any),
       skills: b.skills !== undefined ? fromJsonArray(b.skills) : (existing.skills as any),
       salary: b.salary ?? existing.salary,
-      employmentType: b.employmentType ?? existing.employmentType,
+      employmentType: b.employment_type ?? b.employmentType ?? existing.employmentType,
       applicationDeadline: b.application_deadline ? new Date(b.application_deadline) : existing.applicationDeadline,
       source: b.source ?? existing.source,
       jobUrl: b.job_url ?? existing.jobUrl,
