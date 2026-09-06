@@ -19,18 +19,31 @@ const BASE = import.meta.env.DEV
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
   const token = typeof window !== "undefined" ? localStorage.getItem("job-tracker-token") : null;
   const headers = new Headers({ "Content-Type": "application/json" });
+  const controller = new AbortController();
+  const timeout = window.setTimeout(() => controller.abort(), 12000);
 
   if (token) {
     headers.set("Authorization", `Bearer ${token}`);
   }
 
-  const res = await fetch(`${BASE}${path}`, {
-    ...options,
-    headers: {
-      ...Object.fromEntries(headers.entries()),
-      ...((options?.headers as Record<string, string>) ?? {}),
-    },
-  });
+  let res: Response;
+  try {
+    res = await fetch(`${BASE}${path}`, {
+      ...options,
+      signal: options?.signal ?? controller.signal,
+      headers: {
+        ...Object.fromEntries(headers.entries()),
+        ...((options?.headers as Record<string, string>) ?? {}),
+      },
+    });
+  } catch (error) {
+    if (error instanceof DOMException && error.name === "AbortError") {
+      throw new Error("The analytics service took too long to respond. Please try again.");
+    }
+    throw error;
+  } finally {
+    window.clearTimeout(timeout);
+  }
   if (!res.ok) {
     const body = await res.json().catch(() => ({ error: res.statusText }));
     throw new Error(body.error || `Request failed: ${res.status}`);

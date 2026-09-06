@@ -62,20 +62,62 @@ export default function Analytics() {
   }, []);
 
   if (loading) {
-    return <p style={{ color: "var(--ink-muted)" }}>Loading analytics…</p>;
+    return (
+      <div>
+        <div className="page-header">
+          <div>
+            <h1>Analytics</h1>
+            <p className="page-subtitle">Preparing your job search snapshot…</p>
+          </div>
+        </div>
+        <div className="stat-grid" aria-label="Loading analytics" aria-busy="true">
+          {['Applications', 'Interviews', 'Offers', 'Interview rate'].map((label) => (
+            <div className="stat-card" key={label}>
+              <p className="value">—</p>
+              <p className="label">{label}</p>
+            </div>
+          ))}
+        </div>
+        <div className="panel" style={{ marginTop: 20 }}>
+          <h3>Loading your insights</h3>
+          <p style={{ color: "var(--ink-muted)" }}>
+            We&apos;re calculating your application trends. This will update automatically.
+          </p>
+        </div>
+      </div>
+    );
   }
 
   if (error) {
     return (
-      <div className="panel">
-        <h3>Analytics unavailable</h3>
-        <p style={{ color: "var(--ink-muted)" }}>{error}</p>
+      <div>
+        <div className="page-header">
+          <div>
+            <h1>Analytics</h1>
+            <p className="page-subtitle">Your job search snapshot.</p>
+          </div>
+        </div>
+        <div className="panel">
+          <h3>Analytics unavailable</h3>
+          <p style={{ color: "var(--ink-muted)" }}>{error}</p>
+          <p style={{ color: "var(--ink-muted)", marginTop: 12 }}>
+            Your applications are still safe. Add or review applications while analytics reconnects.
+          </p>
+        </div>
       </div>
     );
   }
 
   if (!data) {
-    return <p style={{ color: "var(--ink-muted)" }}>No analytics data yet.</p>;
+    return (
+      <div className="panel">
+        <h1>Analytics</h1>
+        <h3 style={{ marginTop: 20 }}>Your insights will appear here</h3>
+        <p style={{ color: "var(--ink-muted)" }}>
+          Start tracking applications to see response rates, sources, and status trends.
+        </p>
+      </div>
+    );
   }
 
   return (
