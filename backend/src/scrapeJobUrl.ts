@@ -246,6 +246,48 @@ const parseJsonLdJobPosting = (html: string) => {
   return null;
 };
 
+// attempt to parse any script blocks that contain raw JSON (LinkedIn often embeds JSON blobs)
+const parseAnyJsonScripts = (html: string) => {
+  const scripts = Array.from(html.matchAll(/<script[^>]*>([\s\S]*?)<\/script>/gi)).map(m => m[1].trim()).filter(Boolean);
+  for (const s of scripts) {
+    // quickly skip obvious non-json
+    if (!s.startsWith('{') && !s.startsWith('[') && !/\{\s*"/.test(s)) continue;
+    try {
+      const obj = JSON.parse(s);
+      // look for job-like structures
+      const candidate = (function scan(o: any): any {
+        if (!o || typeof o !== 'object') return null;
+        if (o.jobPosting || o.decoratedJobPosting || ((o['@type']||'') && /jobposting/i.test(o['@type']))) return o.jobPosting || o.decoratedJobPosting || o;
+        for (const k of Object.keys(o)) {
+          const val = o[k];
+          if (val && typeof val === 'object') {
+            const r = scan(val);
+            if (r) return r;
+          }
+        }
+        return null;
+      })(obj);
+      if (candidate) return candidate;
+    } catch (e) {
+      // ignore parse errors
+    }
+  }
+  return null;
+};
+
+const findLinkedInTopcard = (html: string) => {
+  const top = html.match(/<div[^>]*class=["'][^"']*topcard[\s\S]*?<\/div>\s*<div[^>]*class=["'][^"']*description/mi);
+  // fallback: search for top card area by h1 and nearby spans
+  const h1Match = html.match(/<h1[^>]*>([\s\S]*?)<\/h1>/i);
+  const h1Text = h1Match ? cleanText(h1Match[1].replace(/<[^>]+>/g, ' ')) : '';
+  // company near h1
+  const near = pickTextNearH1(html);
+  // location tokens often in spans with 'topcard__flavor--bullet' or 'job-criteria__text'
+  const locMatch = html.match(/<span[^>]*class=["'][^"']*(?:topcard__flavor--bullet|job-criteria__text|location|job-location)[^"']*["'][^>]*>([\s\S]*?)<\/span>/i);
+  const loc = locMatch ? cleanText(locMatch[1].replace(/<[^>]+>/g, ' ')) : '';
+  return { h1: h1Text, companyNearby: near.nearby || '', locationNearby: loc };
+};
+
 const isLinkedInUrl = (url: string) => {
   try {
     return new URL(url).hostname.includes('linkedin.com');
@@ -462,17 +504,44 @@ export function extractJobDetailsFromHtml(html: string, url: string): ScrapedJob
   let position = cleanText(titlePosition || pickTextFromSelectors(html, ["h1", "job-title", "position"]));
 
   if (isLinkedInUrl(url)) {
+    // prefer any embedded JSON blobs (LinkedIn often embeds job data)
+    const embedded = parseAnyJsonScripts(html);
+    if (embedded) {
+      const jTitle = cleanText(embedded.title || embedded.name || embedded.headline || '');
+      const jCompany = normalizeCompany(embedded.companyName || embedded.hiringOrganization?.name || embedded.hiringOrganization || '');
+      const jLocation = cleanText(embedded.jobLocation || embedded.jobLocationName || embedded.location || '');
+      const jDesc = cleanText((embedded.description && typeof embedded.description === 'string') ? embedded.description.replace(/<[^>]+>/g, ' ') : '');
+      const jSkills = Array.isArray(embedded.skills) ? embedded.skills : (embedded.keySkills || embedded.skills || []);
+      position = position || jTitle || position;
+      company = company || jCompany || company;
+      if (jLocation) {
+        // normalize
+        location = normalizeLocation(jLocation) || location;
+      }
+      if (jDesc) {
+        // strip LinkedIn 'Posted ...' noise
+        const cleaned = jDesc.replace(/^Posted\s+\d{1,2}:\d{2}:\d{2}\s*(AM|PM)\.?.*/i, '').trim();
+        // prefer long descriptions
+        if (cleaned.length > (description || '').length) description = cleaned;
+      }
+      if (jSkills && jSkills.length) {
+        // merge into skillsText
+      }
+
+    }
+
     const near = pickTextNearH1(html);
-    if (near.h1) {
-      position = position || near.h1;
-    }
-    if (near.nearby) {
-      company = company || normalizeCompany(near.nearby);
-    }
-    // also try list-based extraction for LinkedIn
+    if (near.h1) position = position || near.h1;
+    if (near.nearby) company = company || normalizeCompany(near.nearby);
+
+    const top = findLinkedInTopcard(html);
+    if (top.locationNearby) location = location || top.locationNearby;
+    if (top.companyNearby) company = company || normalizeCompany(top.companyNearby);
+    // try list-based extraction for LinkedIn
     const linkedLists = extractListsUnderHeadings(html);
     if (linkedLists && linkedLists.length) {
       // prefer first list as requirements
+      // we'll wire this into later logic below
     }
   }
 
