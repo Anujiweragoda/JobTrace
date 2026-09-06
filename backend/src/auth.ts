@@ -19,6 +19,10 @@ declare global {
 }
 
 const SESSION_SECRET = process.env.JWT_SECRET || "job-tracker-local-secret";
+const IS_PRODUCTION = process.env.NODE_ENV === "production";
+if (IS_PRODUCTION && !process.env.JWT_SECRET) {
+  throw new Error("JWT_SECRET must be configured in production.");
+}
 // Default admin account no longer hard-coded. Provide via env vars to enable seeding in CI/dev only.
 const DEFAULT_USER = process.env.DEFAULT_USER || "";
 const DEFAULT_PASSWORD = process.env.DEFAULT_PASSWORD || "";
@@ -124,7 +128,11 @@ export function verifyToken(token: string) {
     .update(`${header}.${payload}`)
     .digest("base64url");
 
-  if (crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expected))) {
+  const signatureBuffer = Buffer.from(signature);
+  const expectedBuffer = Buffer.from(expected);
+  if (signatureBuffer.length !== expectedBuffer.length) return null;
+
+  if (crypto.timingSafeEqual(signatureBuffer, expectedBuffer)) {
     try {
       const decoded = JSON.parse(Buffer.from(payload, "base64url").toString("utf8"));
       return typeof decoded.sub === "string" ? decoded.sub : null;
@@ -161,17 +169,6 @@ export async function verifyGoogleCredential(credential: string) {
 
 export async function requireAuth(req: Request, res: Response, next: NextFunction) {
   const authHeader = req.headers.authorization || "";
-  try {
-    // eslint-disable-next-line no-console
-    console.log(
-      "requireAuth incoming:",
-      req.method,
-      req.path,
-      "Authorization:",
-      authHeader ? authHeader.slice(0, 32) + "..." : "(none)"
-    );
-  } catch {}
-
   const token = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : null;
 
   if (!token) {
@@ -194,17 +191,17 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
     // Protect against long DB hangs in serverless by racing the DB call
     // against a short timeout so the function returns quickly with a
     // clear error instead of hitting the platform invocation timeout.
-    const dbPromise = prisma.user.findUnique({ where: { username } });
+    let timedOut = false;
     const timeoutMs = 7000;
-    const timeoutPromise = new Promise<null>((resolve) => setTimeout(() => resolve(null), timeoutMs));
-
-    const user = (await Promise.race([dbPromise, timeoutPromise])) as any;
+    const timeout = new Promise<null>((resolve) => setTimeout(() => {
+      timedOut = true;
+      resolve(null);
+    }, timeoutMs));
+    const user = await Promise.race([prisma.user.findUnique({ where: { username } }), timeout]);
     if (!user) {
-      // If user wasn't found due to DB timeout or missing user, return 503 for timeout,
-      // or 401 for an explicitly missing user. Distinguish by checking whether the
-      // DB promise resolved yet is impossible here, so prefer 503 when timed out.
-      // Provide a helpful message for diagnostics.
-      return res.status(503).json({ error: "Database unavailable or timed out (please check DATABASE_URL and network)" });
+      return res.status(timedOut ? 503 : 401).json({
+        error: timedOut ? "Database unavailable or timed out." : "User account not found.",
+      });
     }
 
     req.user = { username, id: user.id };
