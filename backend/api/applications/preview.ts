@@ -187,12 +187,13 @@ export default async function handler(req: any, res: any) {
     const scrapingBeeKey = process.env.SCRAPINGBEE_KEY;
     if (scrapingBeeKey) {
       try {
-        const apiUrl = `https://app.scrapingbee.com/api/v1?api_key=${encodeURIComponent(scrapingBeeKey)}&url=${encodeURIComponent(parsedUrl.toString())}&render_js=false`;
+        // ask ScrapingBee to render JS so we get fully rendered HTML
+        const apiUrl = `https://app.scrapingbee.com/api/v1?api_key=${encodeURIComponent(scrapingBeeKey)}&url=${encodeURIComponent(parsedUrl.toString())}&render_js=true`;
         const controller = new AbortController();
         const timeout = setTimeout(() => controller.abort(), 7000);
         const r = await fetch(apiUrl, { signal: controller.signal, headers: { Accept: "text/html" } });
         clearTimeout(timeout);
-        if (r.ok) {
+            if (r.ok) {
           const html = await r.text();
           // debug: log html length and a short snippet
           // eslint-disable-next-line no-console
@@ -233,7 +234,8 @@ export default async function handler(req: any, res: any) {
             console.log("preview: trying Scrape.do candidate", apiUrl);
             const controller = new AbortController();
             const timeout = setTimeout(() => controller.abort(), 7000);
-            const r = await fetch(apiUrl, { signal: controller.signal, headers: { Accept: "text/html" } });
+            // request rendered HTML from Scrape.do when possible
+            const r = await fetch(apiUrl + "&render=true", { signal: controller.signal, headers: { Accept: "text/html" } });
             clearTimeout(timeout);
             if (r.ok) {
                 const html = await r.text();
@@ -249,6 +251,23 @@ export default async function handler(req: any, res: any) {
                 } catch (e: any) {
                   // eslint-disable-next-line no-console
                   console.warn("preview: Scrape.do parse failed", e && (e.message || e.name));
+                }
+                // If provider returned minimal HTML (often indicates unrendered or blocked), try headless in-code fetch
+                if ((html || "").length < 2000) {
+                  // eslint-disable-next-line no-console
+                  console.warn("preview: Scrape.do returned small HTML, attempting headless fetch fallback", apiUrl, "len", (html||"").length);
+                  try {
+                    const fallbackHtml = await fetchJobPageHtml(parsedUrl.toString());
+                    const parsed = extractJobDetailsFromHtml(fallbackHtml, parsedUrl.toString());
+                    // eslint-disable-next-line no-console
+                    console.log("preview: headless fallback parsed details:", JSON.stringify(parsed));
+                    // eslint-disable-next-line no-console
+                    console.log("preview: returning via headless fallback after Scrape.do small response");
+                    return res.json(parsed);
+                  } catch (e: any) {
+                    // eslint-disable-next-line no-console
+                    console.warn("preview: headless fallback failed after Scrape.do", e && (e.message || e.name));
+                  }
                 }
                 const result = buildPreviewFromHtml(html, parsedUrl, deriveCompany, derivePosition, domain);
                 // eslint-disable-next-line no-console
