@@ -1,57 +1,17 @@
 import { PrismaClient } from "@prisma/client";
-import config from "../prisma/prisma.config";
 
-let _prisma: PrismaClient | null = null;
+const globalForPrisma = globalThis as unknown as { prisma?: PrismaClient };
 
-function initPrisma() {
-	if (!_prisma) {
-		// eslint-disable-next-line no-console
-		console.log("Prisma lazy init: creating client");
-		// Do not pass an "adapter" option here unless the Prisma "driverAdapters"
-		// preview feature is explicitly enabled. Prefer reading the
-		// DATABASE_URL from the environment so Prisma can be constructed
-		// normally in all environments (including Vercel serverless).
-		_prisma = new PrismaClient();
+const prisma = globalForPrisma.prisma ?? new PrismaClient();
 
-		// Note: Do NOT call $connect() here in serverless environments —
-		// opening persistent DB connections can keep the process alive and
-		// cause function timeouts. Let Prisma connect lazily on first query.
-		// eslint-disable-next-line no-console
-		console.log("Prisma lazy init: client created");
-	}
-	return _prisma;
+if (process.env.NODE_ENV !== "production") {
+  globalForPrisma.prisma = prisma;
 }
 
-const handler: ProxyHandler<any> = {
-	get(_, prop) {
-		const client = initPrisma();
-		// @ts-ignore
-		return (client as any)[prop];
-	},
-	apply(_, thisArg, args) {
-		const client = initPrisma();
-		// @ts-ignore
-		return (client as any).apply(thisArg, args);
-	},
-};
-
-// Export a proxy that lazily initializes Prisma on first property access.
-const proxy = new Proxy(function () {}, handler) as unknown as PrismaClient;
-
-export default proxy;
+export default prisma;
 
 export async function disconnectPrisma() {
-	if (_prisma) {
-		try {
-			// eslint-disable-next-line no-console
-			console.log("Prisma: disconnecting client");
-			await _prisma.$disconnect();
-			// eslint-disable-next-line no-console
-			console.log("Prisma: disconnected");
-		} catch (e) {
-			// eslint-disable-next-line no-console
-			console.error("Prisma: $disconnect() failed:", e);
-		}
-		_prisma = null;
-	}
+  if (process.env.NODE_ENV !== "production") {
+    await prisma.$disconnect();
+  }
 }

@@ -165,3 +165,19 @@ job-tracker/
     │       └── Badges.tsx
     └── package.json
 ```
+
+## Vercel deployment
+
+Deploy the `backend` directory as its own Vercel project with **Framework Preset: Other**. The backend uses `backend/vercel.json` and exposes the API through `/api/*`; do not deploy the Express `npm start` server as the Vercel runtime.
+
+Set these backend environment variables in every Vercel environment:
+
+- `DATABASE_URL`: hosted PostgreSQL connection string (use the provider's pooled/serverless URL when available)
+- `JWT_SECRET`: a long random secret used to sign sessions
+- `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET`: required only for Google login
+- `SCRAPE_DO_KEY`: required for job preview scraping
+
+Run Prisma migrations against the hosted database before using the deployed API. For a separate frontend Vercel project, set `VITE_API_BASE` to the backend URL including `/api` (for example `https://your-backend.vercel.app/api`). If both projects share one domain, leave it unset so the frontend uses the relative `/api` path.
+
+The frontend project root is `frontend`, with build command `npm run build` and output directory `dist`. The backend project root is `backend`; its `vercel-build` script generates Prisma and compiles TypeScript for the serverless functions.
+```

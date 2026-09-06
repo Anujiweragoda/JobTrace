@@ -24,12 +24,6 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
     headers.set("Authorization", `Bearer ${token}`);
   }
 
-  // DEBUG: log token and path to help diagnose auth issues (remove in production)
-  try {
-    // eslint-disable-next-line no-console
-    console.log("API request:", path, "localToken:", token ? `${token.slice(0, 8)}...` : null, "finalHeaders:", Object.fromEntries(headers.entries()));
-  } catch {}
-
   const res = await fetch(`${BASE}${path}`, {
     ...options,
     headers: {
