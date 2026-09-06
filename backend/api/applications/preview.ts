@@ -194,6 +194,18 @@ export default async function handler(req: any, res: any) {
         clearTimeout(timeout);
         if (r.ok) {
           const html = await r.text();
+          // debug: log html length and a short snippet
+          // eslint-disable-next-line no-console
+          console.log("preview: ScrapingBee returned length", html.length, "snippet:", html.slice(0, 400).replace(/\n/g, " "));
+          // also run structured extractor for diagnostics
+          try {
+            const parsed = extractJobDetailsFromHtml(html, parsedUrl.toString());
+            // eslint-disable-next-line no-console
+            console.log("preview: ScrapingBee parsed details:", JSON.stringify(parsed));
+          } catch (e: any) {
+            // eslint-disable-next-line no-console
+            console.warn("preview: ScrapingBee parse failed", e && (e.message || e.name));
+          }
           const result = buildPreviewFromHtml(html, parsedUrl, deriveCompany, derivePosition, domain);
           // eslint-disable-next-line no-console
           console.log("preview: returning via ScrapingBee");
@@ -224,11 +236,24 @@ export default async function handler(req: any, res: any) {
             const r = await fetch(apiUrl, { signal: controller.signal, headers: { Accept: "text/html" } });
             clearTimeout(timeout);
             if (r.ok) {
-              const html = await r.text();
-              const result = buildPreviewFromHtml(html, parsedUrl, deriveCompany, derivePosition, domain);
-              // eslint-disable-next-line no-console
-              console.log("preview: returning via Scrape.do", apiUrl);
-              return res.json(result);
+                const html = await r.text();
+                // debug: log html length and snippet
+                // eslint-disable-next-line no-console
+                console.log("preview: Scrape.do returned length", html.length, "for", apiUrl);
+                // eslint-disable-next-line no-console
+                console.log("preview: Scrape.do snippet:", html.slice(0, 400).replace(/\n/g, " "));
+                try {
+                  const parsed = extractJobDetailsFromHtml(html, parsedUrl.toString());
+                  // eslint-disable-next-line no-console
+                  console.log("preview: Scrape.do parsed details:", JSON.stringify(parsed));
+                } catch (e: any) {
+                  // eslint-disable-next-line no-console
+                  console.warn("preview: Scrape.do parse failed", e && (e.message || e.name));
+                }
+                const result = buildPreviewFromHtml(html, parsedUrl, deriveCompany, derivePosition, domain);
+                // eslint-disable-next-line no-console
+                console.log("preview: returning via Scrape.do", apiUrl);
+                return res.json(result);
             }
           } catch (e: any) {
             // eslint-disable-next-line no-console
@@ -251,6 +276,19 @@ export default async function handler(req: any, res: any) {
       clearTimeout(timeout);
       if (r.ok) {
         const html = await r.text();
+        // debug: log proxy response size and snippet
+        // eslint-disable-next-line no-console
+        console.log("preview: proxy returned length", html.length, "for", proxy);
+        // eslint-disable-next-line no-console
+        console.log("preview: proxy snippet:", html.slice(0, 400).replace(/\n/g, " "));
+        try {
+          const parsed = extractJobDetailsFromHtml(html, parsedUrl.toString());
+          // eslint-disable-next-line no-console
+          console.log("preview: proxy parsed details:", JSON.stringify(parsed));
+        } catch (e: any) {
+          // eslint-disable-next-line no-console
+          console.warn("preview: proxy parse failed", e && (e.message || e.name));
+        }
         const result = buildPreviewFromHtml(html, parsedUrl, deriveCompany, derivePosition, domain);
         // eslint-disable-next-line no-console
         console.log("preview: returning via public proxy");
