@@ -503,6 +503,19 @@ export function extractJobDetailsFromHtml(html: string, url: string): ScrapedJob
   let company = normalizeCompany(siteName || titleCompany || pickTextFromSelectors(html, ["company", "employer", "organization"]));
   let position = cleanText(titlePosition || pickTextFromSelectors(html, ["h1", "job-title", "position"]));
 
+  // precompute base location/description and selector-based fields so LinkedIn heuristics can override them
+  let location = cleanText(
+    parseLocation(html) ||
+      (title.match(/\(([^)]+)\)/)?.[1] ?? "") ||
+      getMetaContent(html, "og:locale") ||
+      ""
+  );
+
+  let description = parseDescription(html);
+
+  const requirementsText = pickTextFromSelectors(html, ["requirements", "responsibilities", "qualifications"]);
+  const skillsText = pickTextFromSelectors(html, ["skills", "tech-stack", "experience"]);
+
   if (isLinkedInUrl(url)) {
     // prefer any embedded JSON blobs (LinkedIn often embeds job data)
     const embedded = parseAnyJsonScripts(html);
@@ -544,17 +557,6 @@ export function extractJobDetailsFromHtml(html: string, url: string): ScrapedJob
       // we'll wire this into later logic below
     }
   }
-
-  const location = cleanText(
-    parseLocation(html) ||
-      (title.match(/\(([^)]+)\)/)?.[1] ?? "") ||
-      getMetaContent(html, "og:locale") ||
-      ""
-  );
-
-  const description = parseDescription(html);
-  const requirementsText = pickTextFromSelectors(html, ["requirements", "responsibilities", "qualifications"]);
-  const skillsText = pickTextFromSelectors(html, ["skills", "tech-stack", "experience"]);
 
   // try to extract list-based requirements/skills (LinkedIn and many job sites use headings + UL)
   const headingLists = extractListsUnderHeadings(html);
