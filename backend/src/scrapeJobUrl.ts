@@ -133,6 +133,8 @@ const parseTitle = (html: string, url: string) => {
   if (!title) {
     title = url.split(/[/?#]/).filter(Boolean).slice(-1)[0]?.replace(/[-_]+/g, " ") ?? "";
   }
+  // remove common leading noise like "Apply for" or "Job:" and strip common site suffixes
+  title = title.replace(/^\s*(?:Apply for|Apply now:|Job:|Job\s+opening\s*-?)\s*/i, "");
 
   // strip common site suffixes often appended by job sites (e.g. "| LinkedIn Jobs")
   try {
@@ -189,6 +191,15 @@ const parseDescription = (html: string) => {
   // prefer meta description / og:description when available
   const metaDesc = getMetaContent(html, 'og:description') || getMetaContent(html, 'description');
   if (metaDesc) return cleanText(metaDesc);
+
+  // LinkedIn-specific: prefer the show-more-less markup which contains the full description
+  const linkedInBlock = html.match(/<div[^>]*class=["'][^"']*show-more-less-html__markup[^"']*["'][^>]*>([\s\S]*?)<\/div>/i);
+  if (linkedInBlock && linkedInBlock[1]) {
+    const inner = linkedInBlock[1];
+    const items = Array.from(inner.matchAll(/<li[^>]*>([\s\S]*?)<\/li>/gi)).map(m => cleanText((m[1]||'').replace(/<[^>]+>/g, ' '))).filter(Boolean);
+    if (items.length) return items.join(' ');
+    return cleanText(inner.replace(/<[^>]+>/g, ' '));
+  }
 
   const paragraphs = Array.from(html.matchAll(/<p[^>]*>([\s\S]*?)<\/p>/gi)).map((m) =>
     cleanText(m[1].replace(/<[^>]+>/g, " "))
@@ -308,9 +319,18 @@ const findCompanyAndPosition = (title: string) => {
   if (!title) return { company: "", position: "" };
 
   // try patterns like "Position at Company — Location" or "Position - Core at Company"
-  const atPattern = title.match(/^(.*?)\s+at\s+([^\u2013\u2014\-|\|]+)(?:[\u2013\u2014\-|\|].*)?$/i);
-  if (atPattern) {
-    return { company: cleanText(atPattern[2]), position: cleanText(atPattern[1]) };
+  // if title contains ' at ' somewhere, prefer splitting there (handles 'Core at Jobgether')
+  const atIndex = title.toLowerCase().indexOf(' at ');
+  if (atIndex >= 0) {
+    const before = title.slice(0, atIndex);
+    let after = title.slice(atIndex + 4);
+    // drop trailing tokens like location or site name
+    after = after.split(/[\u2013\u2014\-|\|]/)[0].trim();
+    const cleanedBefore = cleanText(before.replace(/^\s*(?:Apply for|Job[:\s-]*)/i, ''));
+    const cleanedAfter = cleanText(after);
+    if (cleanedAfter && cleanedBefore) {
+      return { company: cleanedAfter, position: cleanedBefore };
+    }
   }
 
   // fallback: "Position - Company"
