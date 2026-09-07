@@ -6,7 +6,7 @@
   "scripts": {
     "build": "npm run prisma:generate && tsc",
     "start": "node dist/index.js",
-    "dev": "ts-node src/index.ts",
+    "dev": "node -r ts-node/register -e \"const app=require('./src/index.ts').default; app.listen(process.env.PORT || 4001, () => console.log('Job Tracker API listening'))\"",
     "test": "node --require ts-node/register --test ./src/*.test.ts",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev --name init",
