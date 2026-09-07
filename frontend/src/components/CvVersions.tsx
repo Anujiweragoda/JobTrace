@@ -10,12 +10,23 @@ interface Props {
 export default function CvVersions({ cvVersions, onChanged }: Props) {
   const [name, setName] = useState("");
   const [tag, setTag] = useState("");
+  const [file, setFile] = useState<File | undefined>();
+  const [error, setError] = useState("");
 
   async function add() {
     if (!name.trim()) return;
-    await api.createCvVersion({ name: name.trim(), tag: tag.trim() || undefined });
+    setError("");
+    try {
+      await api.createCvVersion({ name: name.trim(), tag: tag.trim() || undefined, file });
+    } catch (error) {
+      setError(error instanceof Error ? error.message : "Could not save the CV version");
+      return;
+    }
     setName("");
     setTag("");
+    setFile(undefined);
+    const input = document.getElementById("cv-pdf") as HTMLInputElement | null;
+    if (input) input.value = "";
     onChanged();
   }
 
@@ -54,10 +65,29 @@ export default function CvVersions({ cvVersions, onChanged }: Props) {
             value={tag}
             onChange={(e) => setTag(e.target.value)}
           />
+          <label className="btn btn-ghost" htmlFor="cv-pdf">
+            {file ? file.name : "Attach PDF"}
+          </label>
+          <input
+            id="cv-pdf"
+            type="file"
+            accept="application/pdf,.pdf"
+            style={{ display: "none" }}
+            onChange={(e) => {
+              const selected = e.target.files?.[0];
+              if (selected && selected.type !== "application/pdf") {
+                setError("Please choose a PDF file.");
+                return;
+              }
+              setError("");
+              setFile(selected);
+            }}
+          />
           <button className="btn btn-primary" onClick={add}>
             Add
           </button>
         </div>
+        {error && <p style={{ color: "var(--danger)", marginTop: 10 }}>{error}</p>}
       </div>
 
       <div className="cv-list">
@@ -66,6 +96,17 @@ export default function CvVersions({ cvVersions, onChanged }: Props) {
             <div>
               <p style={{ fontSize: 13.5, fontWeight: 600 }}>{cv.name}</p>
               {cv.tag && <p style={{ fontSize: 12, color: "var(--ink-muted)" }}>{cv.tag}</p>}
+              {cv.file_path && (
+                <a
+                  className="btn btn-ghost"
+                  href={api.cvFileUrl(cv.id)}
+                  target="_blank"
+                  rel="noreferrer"
+                  style={{ display: "inline-block", marginTop: 8 }}
+                >
+                  View PDF
+                </a>
+              )}
             </div>
             <button className="btn btn-ghost" onClick={() => remove(cv.id)}>
               Remove
