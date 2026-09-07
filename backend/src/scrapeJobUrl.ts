@@ -386,8 +386,19 @@ const extractTechnologySkills = (text: string) => {
   });
 };
 
-const findCompanyAndPosition = (title: string) => {
-  if (!title) return { company: "", position: "" };
+const findCompanyAndPosition = (title: string): { company: string; position: string; location?: string } => {
+  if (!title) return { company: "", position: "", location: "" };
+
+  // Job boards often put the location in the page title, for example:
+  // "Skaylink hiring DevOps Engineer (m/w/d) in Munich, Bavaria, Germany".
+  const hiringMatch = title.match(/^(.+?)\s+hiring\s+(.+?)(?:\s+in\s+([^|]+?))?\s*$/i);
+  if (hiringMatch) {
+    return {
+      company: cleanText(hiringMatch[1]),
+      position: cleanText(hiringMatch[2]),
+      location: normalizeLocation(hiringMatch[3] || ""),
+    };
+  }
 
   // try patterns like "Position at Company — Location" or "Position - Core at Company"
   // if title contains ' at ' somewhere, prefer splitting there (handles 'Core at Jobgether')
@@ -481,7 +492,7 @@ export function extractJobDetailsFromHtml(html: string, url: string): ScrapedJob
 
   const siteName = normalizeCompany(getMetaContent(html, "og:site_name"));
   const title = parseTitle(html, url);
-  const { company: titleCompany, position: titlePosition } = findCompanyAndPosition(title);
+  const { company: titleCompany, position: titlePosition, location: titleLocation } = findCompanyAndPosition(title);
 
   // If JSON-LD job posting found, prefer its fields
   if (jsonLd) {
@@ -540,6 +551,7 @@ export function extractJobDetailsFromHtml(html: string, url: string): ScrapedJob
   // precompute base location/description and selector-based fields so LinkedIn heuristics can override them
   let location = cleanText(
     parseLocation(html) ||
+      titleLocation ||
       (title.match(/\(([^)]+)\)/)?.[1] ?? "") ||
       getMetaContent(html, "og:locale") ||
       ""
