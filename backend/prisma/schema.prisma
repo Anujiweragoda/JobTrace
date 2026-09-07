@@ -22,6 +22,9 @@ model CvVersion {
   name         String
   tag          String?
   fileName     String?       @map("file_name")
+  filePath     String?       @map("file_path")
+  fileSize     Int?          @map("file_size")
+  mimeType     String?       @map("mime_type")
   createdAt    DateTime      @default(now()) @map("created_at")
   applications Application[]
 }

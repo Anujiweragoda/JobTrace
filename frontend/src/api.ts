@@ -113,8 +113,31 @@ export const api = {
 
   // CV versions
   listCvVersions: () => request<CvVersion[]>(`/cv-versions`),
-  createCvVersion: (data: { name: string; tag?: string; file_name?: string }) =>
-    request<CvVersion>(`/cv-versions`, { method: "POST", body: JSON.stringify(data) }),
+  createCvVersion: (data: { name: string; tag?: string; file?: File }) => {
+    if (!data.file) {
+      return request<CvVersion>(`/cv-versions`, {
+        method: "POST",
+        body: JSON.stringify({ name: data.name, tag: data.tag }),
+      });
+    }
+    const token = localStorage.getItem("job-tracker-token");
+    const form = new FormData();
+    form.append("name", data.name);
+    if (data.tag) form.append("tag", data.tag);
+    form.append("file", data.file);
+    return fetch(`${BASE}/cv-versions`, {
+      method: "POST",
+      body: form,
+      headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+    }).then(async (res) => {
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({ error: res.statusText }));
+        throw new Error(body.error || `Request failed: ${res.status}`);
+      }
+      return res.json() as Promise<CvVersion>;
+    });
+  },
+  cvFileUrl: (id: number) => `${BASE}/cv-versions/${id}/file`,
   deleteCvVersion: (id: number) => request<void>(`/cv-versions/${id}`, { method: "DELETE" }),
 
   // Profile

@@ -81,6 +81,9 @@ export interface CvVersion {
   name: string;
   tag: string | null;
   file_name: string | null;
+  file_path: string | null;
+  file_size: number | null;
+  mime_type: string | null;
   created_at: string;
 }
 
