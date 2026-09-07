@@ -199,15 +199,18 @@ export default async function handler(req: any, res: any) {
           // eslint-disable-next-line no-console
           console.log("preview: ScrapingBee returned length", html.length, "snippet:", html.slice(0, 400).replace(/\n/g, " "));
           // also run structured extractor for diagnostics
+          let parsedDetails: ReturnType<typeof extractJobDetailsFromHtml> | null = null;
           try {
-            const parsed = extractJobDetailsFromHtml(html, parsedUrl.toString());
+            parsedDetails = extractJobDetailsFromHtml(html, parsedUrl.toString());
             // eslint-disable-next-line no-console
-            console.log("preview: ScrapingBee parsed details:", JSON.stringify(parsed));
+            console.log("preview: ScrapingBee parsed details:", JSON.stringify(parsedDetails));
           } catch (e: any) {
             // eslint-disable-next-line no-console
             console.warn("preview: ScrapingBee parse failed", e && (e.message || e.name));
           }
-          const result = buildPreviewFromHtml(html, parsedUrl, deriveCompany, derivePosition, domain);
+          const result = parsedDetails && (parsedDetails.location || parsedDetails.company || parsedDetails.position)
+            ? parsedDetails
+            : buildPreviewFromHtml(html, parsedUrl, deriveCompany, derivePosition, domain);
           // eslint-disable-next-line no-console
           console.log("preview: returning via ScrapingBee");
           return res.json(result);
@@ -244,10 +247,11 @@ export default async function handler(req: any, res: any) {
                 console.log("preview: Scrape.do returned length", html.length, "for", apiUrl);
                 // eslint-disable-next-line no-console
                 console.log("preview: Scrape.do snippet:", html.slice(0, 400).replace(/\n/g, " "));
+                let parsedDetails: ReturnType<typeof extractJobDetailsFromHtml> | null = null;
                 try {
-                  const parsed = extractJobDetailsFromHtml(html, parsedUrl.toString());
+                  parsedDetails = extractJobDetailsFromHtml(html, parsedUrl.toString());
                   // eslint-disable-next-line no-console
-                  console.log("preview: Scrape.do parsed details:", JSON.stringify(parsed));
+                  console.log("preview: Scrape.do parsed details:", JSON.stringify(parsedDetails));
                 } catch (e: any) {
                   // eslint-disable-next-line no-console
                   console.warn("preview: Scrape.do parse failed", e && (e.message || e.name));
@@ -269,7 +273,9 @@ export default async function handler(req: any, res: any) {
                     console.warn("preview: headless fallback failed after Scrape.do", e && (e.message || e.name));
                   }
                 }
-                const result = buildPreviewFromHtml(html, parsedUrl, deriveCompany, derivePosition, domain);
+                const result = parsedDetails && (parsedDetails.location || parsedDetails.company || parsedDetails.position)
+                  ? parsedDetails
+                  : buildPreviewFromHtml(html, parsedUrl, deriveCompany, derivePosition, domain);
                 // eslint-disable-next-line no-console
                 console.log("preview: returning via Scrape.do", apiUrl);
                 return res.json(result);
@@ -300,15 +306,18 @@ export default async function handler(req: any, res: any) {
         console.log("preview: proxy returned length", html.length, "for", proxy);
         // eslint-disable-next-line no-console
         console.log("preview: proxy snippet:", html.slice(0, 400).replace(/\n/g, " "));
+        let parsedDetails: ReturnType<typeof extractJobDetailsFromHtml> | null = null;
         try {
-          const parsed = extractJobDetailsFromHtml(html, parsedUrl.toString());
+          parsedDetails = extractJobDetailsFromHtml(html, parsedUrl.toString());
           // eslint-disable-next-line no-console
-          console.log("preview: proxy parsed details:", JSON.stringify(parsed));
+          console.log("preview: proxy parsed details:", JSON.stringify(parsedDetails));
         } catch (e: any) {
           // eslint-disable-next-line no-console
           console.warn("preview: proxy parse failed", e && (e.message || e.name));
         }
-        const result = buildPreviewFromHtml(html, parsedUrl, deriveCompany, derivePosition, domain);
+        const result = parsedDetails && (parsedDetails.location || parsedDetails.company || parsedDetails.position)
+          ? parsedDetails
+          : buildPreviewFromHtml(html, parsedUrl, deriveCompany, derivePosition, domain);
         // eslint-disable-next-line no-console
         console.log("preview: returning via public proxy");
         return res.json(result);
