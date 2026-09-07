@@ -120,8 +120,6 @@ p {
 .auth-card {
   position: relative;
   z-index: 1;
-
-.auth-card {
   width: min(100%, 420px);
   background: var(--surface);
   border: 1px solid var(--border);
