@@ -496,7 +496,10 @@ export function extractJobDetailsFromHtml(html: string, url: string): ScrapedJob
 
   // If JSON-LD job posting found, prefer its fields
   if (jsonLd) {
-    const jTitle = cleanText(jsonLd.title || jsonLd.name || jsonLd.headline || titlePosition || title || "");
+    const rawTitle = cleanText(jsonLd.title || jsonLd.name || jsonLd.headline || titlePosition || title || "");
+    const jTitle = titleLocation
+      ? cleanText(rawTitle.replace(new RegExp(`\\s+in\\s+${titleLocation.replace(/[.*+?^${}()|[\\]\\\\]/g, "\\\\$&")}$`, "i"), ""))
+      : rawTitle;
     const jCompany = normalizeCompany(
       jsonLd.hiringOrganization?.name || jsonLd.hiringOrganization || siteName || titleCompany
     );
