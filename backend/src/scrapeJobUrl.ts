@@ -391,12 +391,12 @@ const findCompanyAndPosition = (title: string): { company: string; position: str
 
   // Job boards often put the location in the page title, for example:
   // "Skaylink hiring DevOps Engineer (m/w/d) in Munich, Bavaria, Germany".
-  const hiringMatch = title.match(/^(.+?)\s+hiring\s+(.+?)(?:\s+in\s+([^|]+?))?\s*$/i);
+  const hiringMatch = title.match(/^(.+?)\s+hiring\s+(.+?)\s+in\s+(.+?)\s*$/i);
   if (hiringMatch) {
     return {
       company: cleanText(hiringMatch[1]),
       position: cleanText(hiringMatch[2]),
-      location: normalizeLocation(hiringMatch[3] || ""),
+      location: normalizeLocation(hiringMatch[3]),
     };
   }
 
@@ -536,7 +536,7 @@ export function extractJobDetailsFromHtml(html: string, url: string): ScrapedJob
     return {
       company: jCompany || "Unknown company",
       position: jTitle || "Untitled role",
-      location: normalizeLocation(jLocation) || null,
+      location: normalizeLocation(jLocation) || normalizeLocation(titleLocation) || null,
       job_description: jDescription || null,
       requirements: requirementsText ? splitKeywords(requirementsText) : [],
       skills: normalizedSkills,

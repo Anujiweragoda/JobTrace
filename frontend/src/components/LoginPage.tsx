@@ -105,6 +105,9 @@ export default function LoginPage({ onLogin, onGoogleLogin, onSignup, loading = 
 
   return (
     <div className="auth-screen">
+      <div className="auth-orbit auth-orbit-one" aria-hidden="true" />
+      <div className="auth-orbit auth-orbit-two" aria-hidden="true" />
+      <div className="auth-orbit auth-orbit-three" aria-hidden="true" />
       <div className="auth-card">
         <h1>JobTrace</h1>
         <p className="auth-subtitle">Sign in to manage your job applications</p>
