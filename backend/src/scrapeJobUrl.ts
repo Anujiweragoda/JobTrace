@@ -381,7 +381,7 @@ const extractTechnologySkills = (text: string) => {
   ].map((skill) => skill.trim());
   const lower = text.toLowerCase();
   return technologies.filter((skill) => {
-    const escaped = skill.replace(/[.*+?^${}()|[\\]\\\\]/g, "\\\\$&");
+    const escaped = skill.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     return new RegExp(`(?<![a-z0-9])${escaped}(?![a-z0-9])`, "i").test(lower);
   });
 };
