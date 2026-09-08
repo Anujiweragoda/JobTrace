@@ -68,6 +68,7 @@ export default function LoginPage({ onLogin, onGoogleLogin, onSignup, loading = 
       const btnContainer = document.getElementById("google-signin-button");
       if (btnContainer) {
         btnContainer.replaceChildren();
+        const width = Math.min(btnContainer.offsetWidth || 400, 400);
         window.google.accounts.id.renderButton(btnContainer, {
           theme: "outline",
           size: "large",
