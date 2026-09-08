@@ -30,6 +30,7 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
   try {
     res = await fetch(`${BASE}${path}`, {
       ...options,
+      cache: "no-store",
       signal: options?.signal ?? controller.signal,
       headers: {
         ...Object.fromEntries(headers.entries()),
