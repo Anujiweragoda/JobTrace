@@ -32,45 +32,63 @@ router.get("/", async (req, res) => {
   const userId = (req as any).user?.id;
   if (!userId) return res.status(401).json({ error: "Authentication required" });
 
-  const totalApplicationsCount = await prisma.application.count({ where: { NOT: { status: "saved" }, userId } });
+  try {
+    // Run independent aggregates together. This avoids making a serverless request
+    // wait on several sequential database round trips, especially on a cold pool.
+    const [totalApplicationsCount, interviewEvents, offersCount, sourceGroups, employmentGroups, statusGroups] =
+      await Promise.all([
+        prisma.application.count({ where: { NOT: { status: "saved" }, userId } }),
+        prisma.timelineEvent.groupBy({
+          by: ["applicationId"],
+          where: { eventType: "interview", application: { userId } },
+        }),
+        prisma.application.count({ where: { status: "offer", userId } }),
+        prisma.application.groupBy({
+          by: ["source"],
+          where: { userId },
+          _count: { _all: true },
+          orderBy: { _count: { source: "desc" } },
+        }),
+        prisma.application.groupBy({
+          by: ["employmentType"],
+          where: { userId },
+          _count: { _all: true },
+          orderBy: { _count: { employmentType: "desc" } },
+        }),
+        prisma.application.groupBy({
+          by: ["status"],
+          where: { userId },
+          _count: { _all: true },
+          orderBy: { _count: { status: "desc" } },
+        }),
+      ]);
 
-  const interviewCountDistinct = await prisma.timelineEvent.findMany({ where: { eventType: "interview", application: { userId } }, distinct: ["applicationId"], select: { applicationId: true } });
+    const responseRate = totalApplicationsCount > 0
+      ? Math.round((interviewEvents.length / totalApplicationsCount) * 100)
+      : 0;
 
-  const offersCount = await prisma.application.count({ where: { status: "offer", userId } });
-
-  const responseRate = totalApplicationsCount > 0 ? Math.round((interviewCountDistinct.length / totalApplicationsCount) * 100) : 0;
-
-  const bySource = await prisma.$queryRaw`
-    SELECT COALESCE(source, 'Unspecified') as source, COUNT(*) as count FROM applications WHERE user_id = ${userId} GROUP BY source ORDER BY count DESC
-  `;
-
-  const byEmploymentType = await prisma.$queryRaw`
-    SELECT COALESCE(employment_type, 'Unspecified') as employment_type, COUNT(*) as count FROM applications WHERE user_id = ${userId} GROUP BY employment_type ORDER BY count DESC
-  `;
-
-  const byStatus = await prisma.$queryRaw`
-    SELECT status, COUNT(*) as count FROM applications WHERE user_id = ${userId} GROUP BY status
-  `;
-
-  const toJsonRows = (rows: unknown[]) => rows.map((row) => {
-    const value = row as Record<string, unknown>;
-    return Object.fromEntries(
-      Object.entries(value).map(([key, entry]) => [
-        key,
-        typeof entry === "bigint" ? Number(entry) : entry,
-      ]),
-    );
-  });
-
-  res.json({
-    totalApplications: totalApplicationsCount,
-    interviews: interviewCountDistinct.length,
-    offers: offersCount,
-    responseRate,
-    bySource: toJsonRows(bySource as unknown[]),
-    byEmploymentType: toJsonRows(byEmploymentType as unknown[]),
-    byStatus: toJsonRows(byStatus as unknown[]),
-  });
+    res.json({
+      totalApplications: totalApplicationsCount,
+      interviews: interviewEvents.length,
+      offers: offersCount,
+      responseRate,
+      bySource: sourceGroups.map((row) => ({
+        source: row.source ?? "Unspecified",
+        count: row._count._all,
+      })),
+      byEmploymentType: employmentGroups.map((row) => ({
+        employment_type: row.employmentType ?? "Unspecified",
+        count: row._count._all,
+      })),
+      byStatus: statusGroups.map((row) => ({
+        status: row.status,
+        count: row._count._all,
+      })),
+    });
+  } catch (error) {
+    console.error("Analytics query failed", error);
+    res.status(503).json({ error: "Analytics is temporarily unavailable. Please try again." });
+  }
 });
 
 // GET /api/analytics/health-summary -> counts per health bucket, for follow-ups page
