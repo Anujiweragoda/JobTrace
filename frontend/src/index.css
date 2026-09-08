@@ -174,8 +174,17 @@ p {
 }
 
 .google-button {
+  width: 100%;
+  min-height: 44px;
+  display: flex;
   justify-content: center;
-  border-radius: 10px;
+  overflow: hidden;
+}
+
+.google-button > div,
+.google-button iframe {
+  width: 100% !important;
+  max-width: 100%;
 }
 
 .auth-error {

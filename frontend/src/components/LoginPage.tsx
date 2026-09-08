@@ -71,7 +71,7 @@ export default function LoginPage({ onLogin, onGoogleLogin, onSignup, loading = 
         window.google.accounts.id.renderButton(btnContainer, {
           theme: "outline",
           size: "large",
-          width: "100%",
+          width: "368",
           text: "signin_with",
           locale: "en",
           shape: "rectangular",
@@ -156,7 +156,7 @@ export default function LoginPage({ onLogin, onGoogleLogin, onSignup, loading = 
             </button>
 
             {GOOGLE_CLIENT_ID && (
-              <div id="google-signin-button" style={{ width: "100%", marginTop: 12 }} />
+              <div id="google-signin-button" className="google-button" aria-label="Sign in with Google" />
             )}
           </div>
 
