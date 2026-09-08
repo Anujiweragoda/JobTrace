@@ -156,7 +156,7 @@ export default function LoginPage({ onLogin, onGoogleLogin, onSignup, loading = 
             </button>
 
             {GOOGLE_CLIENT_ID && (
-              <div id="google-signin-button" className="google-button" aria-label="Sign in with Google" />
+              <div id="google-signin-button" style={{ width: "100%", marginTop: 12 }} />
             )}
           </div>
 
