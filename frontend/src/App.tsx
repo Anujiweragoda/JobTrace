@@ -43,6 +43,10 @@ export default function App() {
   async function loadAll() {
     setLoading(true);
     setLoadError("");
+    // Clear data immediately when the authenticated account changes. This prevents
+    // the previous user's CVs from remaining visible while the new request loads.
+    setApplications([]);
+    setCvVersions([]);
     try {
       await Promise.all([refreshApplications(), refreshCvVersions()]);
     } catch (err) {
@@ -71,6 +75,8 @@ export default function App() {
         // eslint-disable-next-line no-console
         console.log("stored token after setItem:", localStorage.getItem(TOKEN_KEY));
       } catch {}
+      setApplications([]);
+      setCvVersions([]);
       setToken(response.token);
       setUsername(response.user.username);
     } catch (err) {
@@ -83,6 +89,8 @@ export default function App() {
     try {
       const response = await api.googleLogin(credential);
       localStorage.setItem(TOKEN_KEY, response.token);
+      setApplications([]);
+      setCvVersions([]);
       setToken(response.token);
       setUsername(response.user.username);
     } catch (err) {
@@ -103,6 +111,8 @@ export default function App() {
         // eslint-disable-next-line no-console
         console.log("stored token after signup setItem:", localStorage.getItem(TOKEN_KEY));
       } catch {}
+      setApplications([]);
+      setCvVersions([]);
       setToken(response.token);
       setUsername(response.user.username);
     } catch (err) {
@@ -112,6 +122,8 @@ export default function App() {
 
   async function handleLogout() {
     localStorage.removeItem(TOKEN_KEY);
+    setApplications([]);
+    setCvVersions([]);
     setToken(null);
     setAuthError("");
   }

@@ -12,6 +12,7 @@ const router = Router();
 
 // GET /api/cv-versions
 router.get("/", async (req, res) => {
+  res.setHeader("Cache-Control", "private, no-store");
   const userId = req.user?.id;
   if (!userId) return res.status(401).json({ error: "Authentication required." });
   const rows = await prisma.cvVersion.findMany({
@@ -67,6 +68,7 @@ router.post("/", upload.single("file"), async (req, res) => {
 
 // GET /api/cv-versions/:id/file
 router.get("/:id/file", async (req, res) => {
+  res.setHeader("Cache-Control", "private, no-store");
   const id = Number(req.params.id);
   const userId = req.user?.id;
   if (!userId) return res.status(401).json({ error: "Authentication required." });
