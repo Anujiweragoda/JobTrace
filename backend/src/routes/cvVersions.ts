@@ -12,7 +12,12 @@ const router = Router();
 
 // GET /api/cv-versions
 router.get("/", async (req, res) => {
-  const rows = await prisma.cvVersion.findMany({ orderBy: { createdAt: "desc" } });
+  const userId = req.user?.id;
+  if (!userId) return res.status(401).json({ error: "Authentication required." });
+  const rows = await prisma.cvVersion.findMany({
+    where: { userId },
+    orderBy: { createdAt: "desc" },
+  });
   res.json(rows);
 });
 
@@ -26,10 +31,14 @@ router.post("/", upload.single("file"), async (req, res) => {
     return res.status(400).json({ error: "Only PDF files are supported" });
   }
 
+  const userId = req.user?.id;
+  if (!userId) return res.status(401).json({ error: "Authentication required." });
+
   const row = await prisma.cvVersion.create({
     data: {
       name,
       tag: tag || null,
+      userId,
       fileName: file?.originalname ?? null,
       fileSize: file?.size ?? null,
       mimeType: file?.mimetype ?? null,
@@ -59,7 +68,9 @@ router.post("/", upload.single("file"), async (req, res) => {
 // GET /api/cv-versions/:id/file
 router.get("/:id/file", async (req, res) => {
   const id = Number(req.params.id);
-  const row = await prisma.cvVersion.findUnique({ where: { id } });
+  const userId = req.user?.id;
+  if (!userId) return res.status(401).json({ error: "Authentication required." });
+  const row = await prisma.cvVersion.findFirst({ where: { id, userId } });
   if (!row?.filePath) return res.status(404).json({ error: "CV PDF not found" });
 
   const result = await get(row.filePath, { access: "private" });
@@ -74,8 +85,12 @@ router.get("/:id/file", async (req, res) => {
 // DELETE /api/cv-versions/:id
 router.delete("/:id", async (req, res) => {
   const id = Number(req.params.id);
+  const userId = req.user?.id;
+  if (!userId) return res.status(401).json({ error: "Authentication required." });
   try {
-    await prisma.cvVersion.delete({ where: { id } });
+    const row = await prisma.cvVersion.findFirst({ where: { id, userId } });
+    if (!row) return res.status(404).json({ error: "CV version not found" });
+    await prisma.cvVersion.delete({ where: { id: row.id } });
     res.status(204).send();
   } catch (e) {
     res.status(404).json({ error: "CV version not found" });
