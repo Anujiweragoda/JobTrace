@@ -174,7 +174,7 @@ p {
 }
 
 .google-button {
-  width: fit-content;
+  width: 100%;
   max-width: 100%;
   min-height: 44px;
   display: flex;
@@ -185,7 +185,7 @@ p {
 
 .google-button > div,
 .google-button iframe {
-  width: 358px !important;
+  width: 100% !important;
   max-width: 100%;
   margin-inline: 0;
 }
