@@ -177,14 +177,16 @@ p {
   width: 100%;
   min-height: 44px;
   display: flex;
+  align-items: center;
   justify-content: center;
   overflow: hidden;
 }
 
 .google-button > div,
 .google-button iframe {
-  width: 100% !important;
+  width: min(100%, 400px) !important;
   max-width: 100%;
+  margin-inline: auto;
 }
 
 .auth-error {
