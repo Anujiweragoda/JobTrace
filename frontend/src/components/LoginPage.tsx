@@ -46,14 +46,29 @@ export default function LoginPage({ onLogin, onGoogleLogin, onSignup, loading = 
     }
   }
 
-  
-
   useEffect(() => {
     if (!GOOGLE_CLIENT_ID) return;
 
     const scriptUrl = "https://accounts.google.com/gsi/client?hl=en";
     let cancelled = false;
     let script = document.getElementById("google-gsi-script") as HTMLScriptElement | null;
+
+    const renderGoogleButton = () => {
+      const btnContainer = document.getElementById("google-signin-button");
+      if (!btnContainer || !window.google?.accounts?.id) return;
+
+      btnContainer.replaceChildren();
+      window.google.accounts.id.renderButton(btnContainer, {
+        theme: "outline",
+        size: "large",
+        // Use the container's actual rendered width instead of a hardcoded value,
+        // so it matches the card width at any screen size.
+        width: String(btnContainer.offsetWidth || 358),
+        text: "signin_with",
+        locale: "en",
+        shape: "rectangular",
+      });
+    };
 
     const initialize = () => {
       if (cancelled || !window.google?.accounts?.id) return;
@@ -65,18 +80,7 @@ export default function LoginPage({ onLogin, onGoogleLogin, onSignup, loading = 
         },
       });
 
-      const btnContainer = document.getElementById("google-signin-button");
-      if (btnContainer) {
-        btnContainer.replaceChildren();
-        window.google.accounts.id.renderButton(btnContainer, {
-          theme: "outline",
-          size: "large",
-          width: "358",
-          text: "signin_with",
-          locale: "en",
-          shape: "rectangular",
-        });
-      }
+      renderGoogleButton();
     };
 
     if (script && script.src !== scriptUrl) {
@@ -98,8 +102,14 @@ export default function LoginPage({ onLogin, onGoogleLogin, onSignup, loading = 
       document.head.appendChild(script);
     }
 
+    // Re-render the Google button on resize so its width keeps matching
+    // the container (GSI doesn't do this automatically).
+    const handleResize = () => renderGoogleButton();
+    window.addEventListener("resize", handleResize);
+
     return () => {
       cancelled = true;
+      window.removeEventListener("resize", handleResize);
     };
   }, [onGoogleLogin]);
 
@@ -169,8 +179,6 @@ export default function LoginPage({ onLogin, onGoogleLogin, onSignup, loading = 
               {signupMode ? "Have an account? Log in" : "Create an account"}
             </button>
           </div>
-
-          
         </form>
       </div>
     </div>
