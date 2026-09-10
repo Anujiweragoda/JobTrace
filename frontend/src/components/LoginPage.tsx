@@ -67,15 +67,25 @@ export default function LoginPage({ onLogin, onGoogleLogin, onSignup, loading = 
 
       const btnContainer = document.getElementById("google-signin-button");
       if (btnContainer) {
-        btnContainer.replaceChildren();
-        window.google.accounts.id.renderButton(btnContainer, {
-          theme: "outline",
-          size: "large",
-          width: "100%",
-          text: "signin_with",
-          locale: "en",
-          shape: "rectangular",
-        });
+        const renderGoogleButton = () => {
+          const width = Math.min(Math.floor(btnContainer.clientWidth), 400);
+          if (width < 200) return;
+
+          btnContainer.replaceChildren();
+          window.google.accounts.id.renderButton(btnContainer, {
+            theme: "outline",
+            size: "large",
+            width: String(width),
+            text: "signin_with",
+            locale: "en",
+            shape: "rectangular",
+          });
+        };
+
+        renderGoogleButton();
+        const observer = new ResizeObserver(renderGoogleButton);
+        observer.observe(btnContainer);
+        return () => observer.disconnect();
       }
     };
 
